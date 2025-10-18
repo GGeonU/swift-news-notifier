@@ -99,15 +99,15 @@
 
 ```
 src/
-├── ai/                     # ✅ AI 번역/요약 모듈
-│   ├── ai.module.ts
-│   ├── ai.service.ts       # Gemini API 연동
-│   ├── ai.controller.ts    # 테스트용 HTTP API
+├── summary/                     # ✅ 번역/요약 모듈
+│   ├── summary.module.ts
+│   ├── summary.service.ts       # Gemini API 연동
+│   ├── summary.controller.ts    # 테스트용 HTTP API
 │   └── dto/
 │       └── translate.dto.ts
-├── github/                 # ⏳ TODO: GitHub 수집 모듈
-├── notification/           # ⏳ TODO: 알림 발송 모듈
-├── scheduler/              # ⏳ TODO: 스케줄링 모듈
+├── github/                      # ⏳ TODO: GitHub 수집 모듈
+├── notification/                # ⏳ TODO: 알림 발송 모듈
+├── scheduler/                   # ⏳ TODO: 스케줄링 모듈
 ├── app.module.ts
 └── main.ts
 ```
@@ -133,9 +133,9 @@ PORT=3000
 pnpm start:dev
 ```
 
-### 4. AI 번역 테스트
+### 4. 번역/요약 테스트
 ```bash
-curl -X POST http://localhost:3000/ai/translate \
+curl -X POST http://localhost:3000/summary/translate \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://raw.githubusercontent.com/사용자/레포/main/아티클.md"
@@ -196,7 +196,7 @@ curl -X POST http://localhost:3000/ai/translate \
 
 ## 📝 TODO
 
-- [x] AI 번역/요약 모듈 구현
+- [x] 번역/요약 모듈 구현 (`summary`)
 - [ ] GitHub 수집 모듈 구현
 - [ ] Slack/카카오톡 알림 모듈 구현
 - [ ] 스케줄링 (Cron Job) 구현
