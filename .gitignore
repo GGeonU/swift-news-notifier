@@ -46,6 +46,9 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Data directory (fetcher state)
+/data
+
 # Runtime data
 pids
 *.pid
