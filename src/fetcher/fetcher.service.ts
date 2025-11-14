@@ -4,6 +4,7 @@ import axios, { AxiosInstance } from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Article, FetcherState } from './interfaces';
+import { SummaryService } from '../summary/summary.service';
 
 @Injectable()
 export class FetcherService {
@@ -16,7 +17,10 @@ export class FetcherService {
   private readonly GITHUB_REPO = 'swift-news';
   private readonly GITHUB_BRANCH = 'main';
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private summaryService: SummaryService,
+  ) {
     const githubToken = this.configService.get<string>('GITHUB_TOKEN');
 
     this.axiosInstance = axios.create({
@@ -189,5 +193,69 @@ export class FetcherService {
 
     this.logger.log(`Successfully fetched ${newArticles.length} new articles`);
     return newArticles;
+  }
+
+  /**
+   * 새로운 아티클을 수집하고 각 아티클을 AI로 번역/요약
+   */
+  async fetchAndSummarizeArticles(): Promise<
+    Array<{
+      article: Article;
+      originalUrl: string;
+      translation: string;
+      summary: string;
+    }>
+  > {
+    this.logger.log('Starting to fetch and summarize articles...');
+
+    // 1. 새로운 아티클 수집
+    const articles = await this.fetchNewArticles();
+
+    if (articles.length === 0) {
+      this.logger.log('No new articles to summarize');
+      return [];
+    }
+
+    this.logger.log(`Processing ${articles.length} articles with AI...`);
+
+    // 2. 각 아티클을 병렬로 처리 (AI 요약)
+    const results = await Promise.allSettled(
+      articles.map(async (article) => {
+        try {
+          this.logger.log(`Processing article: ${article.title}`);
+          const summaryResult = await this.summaryService.processArticle(
+            article.url,
+          );
+
+          return {
+            article,
+            ...summaryResult,
+          };
+        } catch (error) {
+          this.logger.error(
+            `Failed to process article "${article.title}": ${error.message}`,
+          );
+          throw error;
+        }
+      }),
+    );
+
+    // 3. 성공한 결과만 반환
+    const successfulResults = results
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => (result as PromiseFulfilledResult<any>).value);
+
+    const failedCount = results.length - successfulResults.length;
+    if (failedCount > 0) {
+      this.logger.warn(
+        `${failedCount} articles failed to process. Successfully processed: ${successfulResults.length}`,
+      );
+    } else {
+      this.logger.log(
+        `Successfully processed all ${successfulResults.length} articles`,
+      );
+    }
+
+    return successfulResults;
   }
 }

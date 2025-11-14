@@ -48,4 +48,35 @@ export class FetcherController {
       );
     }
   }
+
+  /**
+   * GET /fetcher/process
+   * 새로운 아티클을 수집하고 AI로 번역/요약까지 완료
+   */
+  @Get('process')
+  async fetchAndSummarize(): Promise<{
+    success: boolean;
+    processedCount: number;
+    results: Array<{
+      article: Article;
+      originalUrl: string;
+      translation: string;
+      summary: string;
+    }>;
+  }> {
+    try {
+      const results = await this.fetcherService.fetchAndSummarizeArticles();
+
+      return {
+        success: true,
+        processedCount: results.length,
+        results,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Failed to process articles',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }
