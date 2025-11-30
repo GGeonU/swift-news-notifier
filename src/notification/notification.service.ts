@@ -102,23 +102,16 @@ export class NotificationService {
       },
     ];
 
-    // 번역이 있으면 번역 섹션 추가
-    if (formattedTranslation) {
-      blocks.push({
-        type: 'section' as const,
-        text: {
-          type: 'mrkdwn' as const,
-          text: `*🌐 번역*\n${formattedTranslation}`,
-        },
-      });
-    }
+    // 번역과 요약을 하나의 섹션으로 통합
+    const content = [formattedTranslation, formattedSummary]
+      .filter(Boolean)
+      .join('\n\n');
 
-    // 요약 섹션
     blocks.push({
       type: 'section' as const,
       text: {
         type: 'mrkdwn' as const,
-        text: `*📝 핵심 요약*\n${formattedSummary}`,
+        text: content,
       },
     });
 
@@ -145,7 +138,11 @@ export class NotificationService {
   private convertToSlackMarkdown(text: string): string {
     return (
       text
-        // ## 제목 -> *제목*
+        // ## 번역 -> *🌐 번역*
+        .replace(/^##\s+번역\s*$/gm, '*🌐 번역*')
+        // ## 요약 -> *📝 요약*
+        .replace(/^##\s+요약\s*$/gm, '*📝 요약*')
+        // 나머지 ## 제목 -> *제목*
         .replace(/^##\s+(.+)$/gm, '*$1*')
         // ### 제목 -> *제목*
         .replace(/^###\s+(.+)$/gm, '_$1_')

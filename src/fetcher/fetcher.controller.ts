@@ -79,4 +79,30 @@ export class FetcherController {
       );
     }
   }
+
+  /**
+   * GET /fetcher/run
+   * 전체 파이프라인 실행: 수집 → 번역/요약 → Slack 알림
+   */
+  @Get('run')
+  async runFullPipeline(): Promise<{
+    success: boolean;
+    fetchedCount: number;
+    processedCount: number;
+    notifiedCount: number;
+  }> {
+    try {
+      const result = await this.fetcherService.fetchSummarizeAndNotify();
+
+      return {
+        success: true,
+        ...result,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Failed to run full pipeline',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }
