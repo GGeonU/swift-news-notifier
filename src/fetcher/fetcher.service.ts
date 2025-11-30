@@ -5,6 +5,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Article, FetcherState } from './interfaces';
 import { SummaryService } from '../summary/summary.service';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class FetcherService {
@@ -20,6 +21,7 @@ export class FetcherService {
   constructor(
     private configService: ConfigService,
     private summaryService: SummaryService,
+    private notificationService: NotificationService,
   ) {
     const githubToken = this.configService.get<string>('GITHUB_TOKEN');
 
@@ -257,5 +259,57 @@ export class FetcherService {
     }
 
     return successfulResults;
+  }
+
+  /**
+   * 전체 파이프라인: 수집 → 번역/요약 → Slack 알림
+   */
+  async fetchSummarizeAndNotify(): Promise<{
+    fetchedCount: number;
+    processedCount: number;
+    notifiedCount: number;
+  }> {
+    this.logger.log('Starting full pipeline: Fetch → Summarize → Notify');
+
+    // 1. 새로운 아티클 수집 + 번역/요약
+    const processedArticles = await this.fetchAndSummarizeArticles();
+
+    if (processedArticles.length === 0) {
+      this.logger.log('No new articles to notify');
+      return {
+        fetchedCount: 0,
+        processedCount: 0,
+        notifiedCount: 0,
+      };
+    }
+
+    // 2. Slack 알림 전송
+    const notifications = processedArticles.map((article) => ({
+      title: article.article.title,
+      url: article.article.url,
+      summary: article.summary,
+      translation: article.translation,
+    }));
+
+    try {
+      await this.notificationService.sendMultipleToSlack(notifications);
+
+      this.logger.log(
+        `Full pipeline completed: ${processedArticles.length} articles processed and notified`,
+      );
+
+      return {
+        fetchedCount: processedArticles.length,
+        processedCount: processedArticles.length,
+        notifiedCount: processedArticles.length,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to send notifications: ${error.message}`);
+      return {
+        fetchedCount: processedArticles.length,
+        processedCount: processedArticles.length,
+        notifiedCount: 0,
+      };
+    }
   }
 }

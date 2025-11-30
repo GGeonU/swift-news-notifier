@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SummaryModule } from './summary/summary.module';
 import { FetcherModule } from './fetcher/fetcher.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { FetcherModule } from './fetcher/fetcher.module';
     }),
     SummaryModule,
     FetcherModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

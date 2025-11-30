@@ -19,7 +19,7 @@ export class SummaryService {
 
     this.generativeAI = new GoogleGenerativeAI(apiKey);
     this.generativeModel = this.generativeAI.getGenerativeModel(
-      { model: 'gemini-2.5-flash' }
+      { model: 'gemini-3.0-flash' }
     );
   }
 
@@ -119,7 +119,7 @@ ${url}
 ${url}
 
 **응답 형식 (반드시 이 형식을 따라주세요):**
-## 번역
+## 주요 내용
 [여기에 한국어 번역 내용 1-2줄]
 
 ## 요약
@@ -132,7 +132,7 @@ ${url}
 
 
       // 응답 파싱
-      const translationMatch = response.match(/## 번역\s+([\s\S]*?)(?=## 요약|$)/);
+      const translationMatch = response.match(/## 번역\s+([\s\S]*?)(?=ㅋ## 요약|$)/);
       const summaryMatch = response.match(/## 요약\s+([\s\S]*?)$/);
 
       console.log(response);
