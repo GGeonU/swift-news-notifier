@@ -33,6 +33,39 @@ export class SummaryService {
     );
   }
 
+  /**
+   * article.fetched 이벤트 리스너
+   * 새로운 아티클이 발견되면 자동으로 요약 처리
+   */
+  @OnEvent(ARTICLE_EVENTS.FETCHED)
+  async handleArticleFetched(event: ArticleFetchedEvent) {
+    this.logger.log(
+      `Received article.fetched event for: ${event.title}`,
+    );
+
+    try {
+      const result = await this.processArticle(event.url);
+
+      this.logger.log(
+        `Emitting article.summarized event for: ${event.title}`,
+      );
+      this.eventEmitter.emit(
+        ARTICLE_EVENTS.SUMMARIZED,
+        new ArticleSummarizedEvent(
+          event.title,
+          result.originalUrl,
+          result.translation,
+          result.summary,
+        ),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to process article "${event.title}": ${error.message}`,
+      );
+      // 실패해도 다른 아티클 처리는 계속 진행
+    }
+  }
+
   async processArticle(url: string): Promise<{
     originalUrl: string;
     translation: string;
@@ -69,7 +102,6 @@ ${url}
 - [핵심 포인트 2]
 - [핵심 포인트 3]
 `;
-
     try {
       const result = await this.generativeModel.generateContent(prompt);
       const response = result.response.text();

@@ -6,10 +6,11 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationService } from './notification.service';
 import { FetcherService } from '../fetcher/fetcher.service';
-import { SummaryService } from '../summary/summary.service';
 import { SlackCommandDto } from './dto/slack-command.dto';
+import { ArticleFetchedEvent, ARTICLE_EVENTS } from '../events/article.events';
 
 @Controller('notification')
 export class NotificationController {
@@ -18,7 +19,7 @@ export class NotificationController {
   constructor(
     private readonly notificationService: NotificationService,
     private readonly fetcherService: FetcherService,
-    private readonly summaryService: SummaryService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -94,7 +95,8 @@ export class NotificationController {
   }
 
   /**
-   * 새로운 아티클 체크 및 요약 처리
+   * 새로운 아티클 체크 및 요약 처리 (이벤트 기반)
+   * fetchNewArticles()가 자동으로 이벤트 체인을 시작함
    */
   private async handleCheckArticles() {
     this.logger.log('Processing check articles command...');
@@ -105,12 +107,12 @@ export class NotificationController {
       text: '🔍 새로운 아티클을 확인하고 있습니다...',
     };
 
-    // 백그라운드에서 실제 작업 수행
+    // 백그라운드에서 실제 작업 수행 (이벤트 체인 자동 실행)
     setImmediate(async () => {
       try {
-        const result = await this.fetcherService.fetchSummarizeAndNotify();
+        const articles = await this.fetcherService.fetchNewArticles();
 
-        if (result.fetchedCount === 0) {
+        if (articles.length === 0) {
           await this.notificationService.sendToSlack({
             title: '알림 체크 완료',
             url: 'https://github.com/SAllen0400/swift-news',
@@ -120,7 +122,7 @@ export class NotificationController {
           await this.notificationService.sendToSlack({
             title: '알림 체크 완료',
             url: 'https://github.com/SAllen0400/swift-news',
-            summary: `✅ 총 ${result.fetchedCount}개의 새로운 아티클을 처리했습니다.\n• 요약 완료: ${result.processedCount}개\n• 알림 전송: ${result.notifiedCount}개`,
+            summary: `✅ 총 ${articles.length}개의 새로운 아티클을 처리 중입니다.\n이벤트 기반으로 자동 요약 및 알림이 진행됩니다.`,
           });
         }
       } catch (error) {
@@ -137,7 +139,8 @@ export class NotificationController {
   }
 
   /**
-   * 특정 URL 아티클 요약 처리
+   * 특정 URL 아티클 요약 처리 (이벤트 기반)
+   * article.fetched 이벤트를 발행하면 SummaryService가 자동으로 처리
    */
   private async handleSummarizeArticle(url: string) {
     this.logger.log(`Processing summarize article command for: ${url}`);
@@ -158,25 +161,14 @@ export class NotificationController {
       text: `🔍 아티클을 분석하고 있습니다...\n${url}`,
     };
 
-    // 백그라운드에서 요약 처리
-    setImmediate(async () => {
-      try {
-        const result = await this.summaryService.processArticle(url);
-
-        await this.notificationService.sendToSlack({
-          title: '아티클 요약 완료',
-          url: result.originalUrl,
-          translation: result.translation,
-          summary: result.summary,
-        });
-      } catch (error) {
-        this.logger.error(`Summarize error: ${error.message}`);
-        await this.notificationService.sendToSlack({
-          title: '아티클 요약 실패',
-          url: url,
-          summary: `❌ 요약 중 오류가 발생했습니다: ${error.message}`,
-        });
-      }
+    // 백그라운드에서 이벤트 발행 (이벤트 체인 자동 실행)
+    // article.fetched → SummaryService → article.summarized → NotificationService
+    setImmediate(() => {
+      this.logger.log(`Emitting article.fetched event for manual request: ${url}`);
+      this.eventEmitter.emit(
+        ARTICLE_EVENTS.FETCHED,
+        new ArticleFetchedEvent('수동 요청 아티클', url),
+      );
     });
 
     return immediateResponse;
