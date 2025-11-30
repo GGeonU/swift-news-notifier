@@ -51,26 +51,25 @@ export class FetcherController {
 
   /**
    * GET /fetcher/process
-   * 새로운 아티클을 수집하고 AI로 번역/요약까지 완료
+   * 새로운 아티클을 수집하고 이벤트 발행 (이벤트 기반 아키텍처)
+   *
+   * @deprecated 이벤트 기반 아키텍처로 변경됨
+   * 이제 fetchNewArticles()를 호출하면 자동으로 이벤트가 전파되어
+   * Summary → Notification까지 처리됩니다.
    */
   @Get('process')
   async fetchAndSummarize(): Promise<{
     success: boolean;
-    processedCount: number;
-    results: Array<{
-      article: Article;
-      originalUrl: string;
-      translation: string;
-      summary: string;
-    }>;
+    fetchedCount: number;
+    message: string;
   }> {
     try {
-      const results = await this.fetcherService.fetchAndSummarizeArticles();
+      const articles = await this.fetcherService.fetchAndSummarizeArticles();
 
       return {
         success: true,
-        processedCount: results.length,
-        results,
+        fetchedCount: articles.length,
+        message: `${articles.length}개의 아티클이 발견되었습니다. 이벤트가 발행되어 자동으로 요약 및 알림이 처리됩니다.`,
       };
     } catch (error) {
       throw new HttpException(

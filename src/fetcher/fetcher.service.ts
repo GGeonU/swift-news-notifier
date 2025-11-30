@@ -1,11 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios, { AxiosInstance } from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Article, FetcherState } from './interfaces';
-import { SummaryService } from '../summary/summary.service';
-import { NotificationService } from '../notification/notification.service';
+import {
+  ArticleFetchedEvent,
+  ARTICLE_EVENTS,
+} from '../events/article.events';
 
 @Injectable()
 export class FetcherService {
@@ -20,8 +23,7 @@ export class FetcherService {
 
   constructor(
     private configService: ConfigService,
-    private summaryService: SummaryService,
-    private notificationService: NotificationService,
+    private eventEmitter: EventEmitter2,
   ) {
     const githubToken = this.configService.get<string>('GITHUB_TOKEN');
 
@@ -153,6 +155,7 @@ export class FetcherService {
 
   /**
    * 새로운 아티클 수집 (메인 로직)
+   * 각 아티클마다 'article.fetched' 이벤트를 발행
    */
   async fetchNewArticles(): Promise<Article[]> {
     this.logger.log('Starting to fetch new articles...');
@@ -186,7 +189,16 @@ export class FetcherService {
     // 5. 새로운 아티클 파싱
     const newArticles = this.parseNewArticlesFromDiff(diff);
 
-    // 6. 상태 업데이트
+    // 6. 각 아티클마다 이벤트 발행
+    for (const article of newArticles) {
+      this.logger.log(`Emitting article.fetched event for: ${article.title}`);
+      this.eventEmitter.emit(
+        ARTICLE_EVENTS.FETCHED,
+        new ArticleFetchedEvent(article.title, article.url),
+      );
+    }
+
+    // 7. 상태 업데이트
     await this.saveState({
       lastProcessedCommitSha: latestSha,
       lastCheckedAt: new Date(),
@@ -198,118 +210,38 @@ export class FetcherService {
   }
 
   /**
-   * 새로운 아티클을 수집하고 각 아티클을 AI로 번역/요약
+   * @deprecated 이벤트 기반 아키텍처로 변경됨. fetchNewArticles()를 사용하세요.
+   *
+   * 이벤트 기반 흐름:
+   * 1. FetcherService.fetchNewArticles() → article.fetched 이벤트 발행
+   * 2. SummaryService가 article.fetched 이벤트 구독 → AI 처리 → article.summarized 이벤트 발행
+   * 3. NotificationService가 article.summarized 이벤트 구독 → Slack 알림
    */
-  async fetchAndSummarizeArticles(): Promise<
-    Array<{
-      article: Article;
-      originalUrl: string;
-      translation: string;
-      summary: string;
-    }>
-  > {
-    this.logger.log('Starting to fetch and summarize articles...');
-
-    // 1. 새로운 아티클 수집
-    const articles = await this.fetchNewArticles();
-
-    if (articles.length === 0) {
-      this.logger.log('No new articles to summarize');
-      return [];
-    }
-
-    this.logger.log(`Processing ${articles.length} articles with AI...`);
-
-    // 2. 각 아티클을 병렬로 처리 (AI 요약)
-    const results = await Promise.allSettled(
-      articles.map(async (article) => {
-        try {
-          this.logger.log(`Processing article: ${article.title}`);
-          const summaryResult = await this.summaryService.processArticle(
-            article.url,
-          );
-
-          return {
-            article,
-            ...summaryResult,
-          };
-        } catch (error) {
-          this.logger.error(
-            `Failed to process article "${article.title}": ${error.message}`,
-          );
-          throw error;
-        }
-      }),
+  async fetchAndSummarizeArticles(): Promise<Article[]> {
+    this.logger.warn(
+      'fetchAndSummarizeArticles() is deprecated. Use event-based architecture instead.',
     );
-
-    // 3. 성공한 결과만 반환
-    const successfulResults = results
-      .filter((result) => result.status === 'fulfilled')
-      .map((result) => (result as PromiseFulfilledResult<any>).value);
-
-    const failedCount = results.length - successfulResults.length;
-    if (failedCount > 0) {
-      this.logger.warn(
-        `${failedCount} articles failed to process. Successfully processed: ${successfulResults.length}`,
-      );
-    } else {
-      this.logger.log(
-        `Successfully processed all ${successfulResults.length} articles`,
-      );
-    }
-
-    return successfulResults;
+    return this.fetchNewArticles();
   }
 
   /**
-   * 전체 파이프라인: 수집 → 번역/요약 → Slack 알림
+   * @deprecated 이벤트 기반 아키텍처로 변경됨. fetchNewArticles()를 사용하세요.
    */
   async fetchSummarizeAndNotify(): Promise<{
     fetchedCount: number;
     processedCount: number;
     notifiedCount: number;
   }> {
-    this.logger.log('Starting full pipeline: Fetch → Summarize → Notify');
+    this.logger.warn(
+      'fetchSummarizeAndNotify() is deprecated. Use event-based architecture instead.',
+    );
 
-    // 1. 새로운 아티클 수집 + 번역/요약
-    const processedArticles = await this.fetchAndSummarizeArticles();
+    const articles = await this.fetchNewArticles();
 
-    if (processedArticles.length === 0) {
-      this.logger.log('No new articles to notify');
-      return {
-        fetchedCount: 0,
-        processedCount: 0,
-        notifiedCount: 0,
-      };
-    }
-
-    // 2. Slack 알림 전송
-    const notifications = processedArticles.map((article) => ({
-      title: article.article.title,
-      url: article.article.url,
-      summary: article.summary,
-      translation: article.translation,
-    }));
-
-    try {
-      await this.notificationService.sendMultipleToSlack(notifications);
-
-      this.logger.log(
-        `Full pipeline completed: ${processedArticles.length} articles processed and notified`,
-      );
-
-      return {
-        fetchedCount: processedArticles.length,
-        processedCount: processedArticles.length,
-        notifiedCount: processedArticles.length,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to send notifications: ${error.message}`);
-      return {
-        fetchedCount: processedArticles.length,
-        processedCount: processedArticles.length,
-        notifiedCount: 0,
-      };
-    }
+    return {
+      fetchedCount: articles.length,
+      processedCount: 0, // 이벤트 기반이므로 즉시 알 수 없음
+      notifiedCount: 0, // 이벤트 기반이므로 즉시 알 수 없음
+    };
   }
 }
