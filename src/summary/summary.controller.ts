@@ -1,4 +1,4 @@
-import { Body, Controller, Post, HttpException, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { SummaryService } from './summary.service';
 import { TranslateRequestDto, TranslateResponseDto } from './dto/translate.dto';
 
@@ -23,6 +23,32 @@ export class SummaryController {
 
     try {
       const result = await this.summaryService.processArticle(request.url);
+      return result;
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Failed to process article',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * GET /summary/process?url=...
+   * URL 파라미터로 번역 + 요약 테스트 (간편한 테스트용)
+   */
+  @Get('process')
+  async processArticle(
+    @Query('url') url: string,
+  ): Promise<TranslateResponseDto> {
+    if (!url) {
+      throw new HttpException(
+        'URL query parameter is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    try {
+      const result = await this.summaryService.processArticle(url);
       return result;
     } catch (error) {
       throw new HttpException(
