@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Cron } from '@nestjs/schedule';
 import axios, { AxiosInstance } from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -207,5 +208,21 @@ export class FetcherService {
 
     this.logger.log(`Successfully fetched ${newArticles.length} new articles`);
     return newArticles;
+  }
+
+  /**
+   * 매일 오전 9시에 자동으로 새로운 아티클 체크
+   */
+  @Cron('0 11 * * *', {
+    name: 'check-articles-morning',
+    timeZone: 'Asia/Seoul',
+  })
+  async scheduledCheckMorning() {
+    this.logger.log('Running scheduled article check (Morning 11:00 AM)...');
+    try {
+      await this.fetchNewArticles();
+    } catch (error) {
+      this.logger.error(`Scheduled check failed: ${error.message}`);
+    }
   }
 }
