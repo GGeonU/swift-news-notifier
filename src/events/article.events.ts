@@ -25,7 +25,7 @@ export class ArticleSummarizedEvent {
 }
 
 /**
- * 이벤트 이름 상수
+ * 이벤트 이름 Namespace
  */
 export const ARTICLE_EVENTS = {
   FETCHED: 'article.fetched',

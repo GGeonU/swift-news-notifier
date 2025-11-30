@@ -26,6 +26,7 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/event-emitter": "^3.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/schedule": "^6.0.1",
     "@slack/web-api": "^7.13.0",
     "axios": "^1.12.2",
     "reflect-metadata": "^0.2.2",
