@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { OnEvent } from '@nestjs/event-emitter';
 import { WebClient } from '@slack/web-api';
+import {
+  ArticleSummarizedEvent,
+  ARTICLE_EVENTS,
+} from '../events/article.events';
 
 export interface ArticleNotification {
   title: string;
@@ -27,6 +32,35 @@ export class NotificationService {
     } else {
       this.slackClient = new WebClient(slackToken);
       this.logger.log('Slack client initialized successfully');
+    }
+  }
+
+  /**
+   * article.summarized 이벤트 리스너
+   * 아티클 요약이 완료되면 자동으로 Slack 알림 전송
+   */
+  @OnEvent(ARTICLE_EVENTS.SUMMARIZED)
+  async handleArticleSummarized(event: ArticleSummarizedEvent) {
+    this.logger.log(
+      `Received article.summarized event for: ${event.title}`,
+    );
+
+    try {
+      await this.sendToSlack({
+        title: event.title,
+        url: event.url,
+        translation: event.translation,
+        summary: event.summary,
+      });
+
+      this.logger.log(
+        `Successfully sent Slack notification for: ${event.title}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send Slack notification for "${event.title}": ${error.message}`,
+      );
+      // 실패해도 다른 알림은 계속 진행
     }
   }
 
@@ -102,18 +136,32 @@ export class NotificationService {
       },
     ];
 
-    // 번역과 요약을 하나의 섹션으로 통합
-    const content = [formattedTranslation, formattedSummary]
-      .filter(Boolean)
-      .join('\n\n');
+    // 번역과 요약을 분리하여 각각 블록으로 추가 (3000자 제한 대응)
+    if (formattedTranslation) {
+      const translationChunks = this.splitTextIntoChunks(formattedTranslation, 2900);
+      translationChunks.forEach((chunk) => {
+        blocks.push({
+          type: 'section' as const,
+          text: {
+            type: 'mrkdwn' as const,
+            text: chunk,
+          },
+        });
+      });
+    }
 
-    blocks.push({
-      type: 'section' as const,
-      text: {
-        type: 'mrkdwn' as const,
-        text: content,
-      },
-    });
+    if (formattedSummary) {
+      const summaryChunks = this.splitTextIntoChunks(formattedSummary, 2900);
+      summaryChunks.forEach((chunk) => {
+        blocks.push({
+          type: 'section' as const,
+          text: {
+            type: 'mrkdwn' as const,
+            text: chunk,
+          },
+        });
+      });
+    }
 
     // 원문 링크
     blocks.push({
@@ -130,6 +178,45 @@ export class NotificationService {
     });
 
     return blocks;
+  }
+
+  /**
+   * 텍스트를 지정된 길이로 분할
+   */
+  private splitTextIntoChunks(text: string, maxLength: number): string[] {
+    if (text.length <= maxLength) {
+      return [text];
+    }
+
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    // 줄 단위로 분할
+    const lines = text.split('\n');
+
+    for (const line of lines) {
+      if ((currentChunk + line + '\n').length > maxLength) {
+        if (currentChunk) {
+          chunks.push(currentChunk.trim());
+          currentChunk = '';
+        }
+
+        // 한 줄이 너무 길면 강제로 자르기
+        if (line.length > maxLength) {
+          chunks.push(line.substring(0, maxLength - 3) + '...');
+        } else {
+          currentChunk = line + '\n';
+        }
+      } else {
+        currentChunk += line + '\n';
+      }
+    }
+
+    if (currentChunk) {
+      chunks.push(currentChunk.trim());
+    }
+
+    return chunks;
   }
 
   /**
