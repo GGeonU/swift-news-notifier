@@ -208,40 +208,4 @@ export class FetcherService {
     this.logger.log(`Successfully fetched ${newArticles.length} new articles`);
     return newArticles;
   }
-
-  /**
-   * @deprecated 이벤트 기반 아키텍처로 변경됨. fetchNewArticles()를 사용하세요.
-   *
-   * 이벤트 기반 흐름:
-   * 1. FetcherService.fetchNewArticles() → article.fetched 이벤트 발행
-   * 2. SummaryService가 article.fetched 이벤트 구독 → AI 처리 → article.summarized 이벤트 발행
-   * 3. NotificationService가 article.summarized 이벤트 구독 → Slack 알림
-   */
-  async fetchAndSummarizeArticles(): Promise<Article[]> {
-    this.logger.warn(
-      'fetchAndSummarizeArticles() is deprecated. Use event-based architecture instead.',
-    );
-    return this.fetchNewArticles();
-  }
-
-  /**
-   * @deprecated 이벤트 기반 아키텍처로 변경됨. fetchNewArticles()를 사용하세요.
-   */
-  async fetchSummarizeAndNotify(): Promise<{
-    fetchedCount: number;
-    processedCount: number;
-    notifiedCount: number;
-  }> {
-    this.logger.warn(
-      'fetchSummarizeAndNotify() is deprecated. Use event-based architecture instead.',
-    );
-
-    const articles = await this.fetchNewArticles();
-
-    return {
-      fetchedCount: articles.length,
-      processedCount: 0, // 이벤트 기반이므로 즉시 알 수 없음
-      notifiedCount: 0, // 이벤트 기반이므로 즉시 알 수 없음
-    };
-  }
 }

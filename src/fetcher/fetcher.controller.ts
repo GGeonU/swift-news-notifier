@@ -52,8 +52,6 @@ export class FetcherController {
   /**
    * GET /fetcher/process
    * 새로운 아티클을 수집하고 이벤트 발행 (이벤트 기반 아키텍처)
-   *
-   * @deprecated 이벤트 기반 아키텍처로 변경됨
    * 이제 fetchNewArticles()를 호출하면 자동으로 이벤트가 전파되어
    * Summary → Notification까지 처리됩니다.
    */
@@ -64,7 +62,7 @@ export class FetcherController {
     message: string;
   }> {
     try {
-      const articles = await this.fetcherService.fetchAndSummarizeArticles();
+      const articles = await this.fetcherService.fetchNewArticles();
 
       return {
         success: true,
@@ -74,32 +72,6 @@ export class FetcherController {
     } catch (error) {
       throw new HttpException(
         error.message || 'Failed to process articles',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  /**
-   * GET /fetcher/run
-   * 전체 파이프라인 실행: 수집 → 번역/요약 → Slack 알림
-   */
-  @Get('run')
-  async runFullPipeline(): Promise<{
-    success: boolean;
-    fetchedCount: number;
-    processedCount: number;
-    notifiedCount: number;
-  }> {
-    try {
-      const result = await this.fetcherService.fetchSummarizeAndNotify();
-
-      return {
-        success: true,
-        ...result,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to run full pipeline',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
