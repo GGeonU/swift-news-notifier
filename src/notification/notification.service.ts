@@ -60,7 +60,6 @@ export class NotificationService {
       this.logger.error(
         `Failed to send Slack notification for "${event.title}": ${error.message}`,
       );
-      // 실패해도 다른 알림은 계속 진행
     }
   }
 
@@ -119,12 +118,8 @@ export class NotificationService {
    * Slack 메시지 포맷팅
    */
   private formatSlackMessage(article: ArticleNotification) {
-    // 마크다운을 Slack mrkdwn 형식으로 변환
     const formattedSummary = this.convertToSlackMarkdown(article.summary);
-    const formattedTranslation = article.translation
-      ? this.convertToSlackMarkdown(article.translation)
-      : null;
-
+    
     const blocks: any[] = [
       {
         type: 'header' as const,
@@ -136,30 +131,14 @@ export class NotificationService {
       },
     ];
 
-    // 번역과 요약을 분리하여 각각 블록으로 추가 (3000자 제한 대응)
-    if (formattedTranslation) {
-      const translationChunks = this.splitTextIntoChunks(formattedTranslation, 2900);
-      translationChunks.forEach((chunk) => {
-        blocks.push({
-          type: 'section' as const,
-          text: {
-            type: 'mrkdwn' as const,
-            text: chunk,
-          },
-        });
-      });
-    }
-
+    // 요약 섹션
     if (formattedSummary) {
-      const summaryChunks = this.splitTextIntoChunks(formattedSummary, 2900);
-      summaryChunks.forEach((chunk) => {
-        blocks.push({
-          type: 'section' as const,
-          text: {
-            type: 'mrkdwn' as const,
-            text: chunk,
-          },
-        });
+      blocks.push({
+        type: 'section' as const,
+        text: {
+          type: 'mrkdwn' as const,
+          text: formattedSummary,
+        },
       });
     }
 
@@ -181,52 +160,14 @@ export class NotificationService {
   }
 
   /**
-   * 텍스트를 지정된 길이로 분할
-   */
-  private splitTextIntoChunks(text: string, maxLength: number): string[] {
-    if (text.length <= maxLength) {
-      return [text];
-    }
-
-    const chunks: string[] = [];
-    let currentChunk = '';
-
-    // 줄 단위로 분할
-    const lines = text.split('\n');
-
-    for (const line of lines) {
-      if ((currentChunk + line + '\n').length > maxLength) {
-        if (currentChunk) {
-          chunks.push(currentChunk.trim());
-          currentChunk = '';
-        }
-
-        // 한 줄이 너무 길면 강제로 자르기
-        if (line.length > maxLength) {
-          chunks.push(line.substring(0, maxLength - 3) + '...');
-        } else {
-          currentChunk = line + '\n';
-        }
-      } else {
-        currentChunk += line + '\n';
-      }
-    }
-
-    if (currentChunk) {
-      chunks.push(currentChunk.trim());
-    }
-
-    return chunks;
-  }
-
-  /**
    * 마크다운을 Slack mrkdwn 형식으로 변환
    */
   private convertToSlackMarkdown(text: string): string {
+    console.log(text);
     return (
       text
         // ## 번역 -> *🌐 번역*
-        .replace(/^##\s+번역\s*$/gm, '*🌐 번역*')
+        .replace(/^##\s+주요 내용\s*$/gm, '*🌐 주요 내용*')
         // ## 요약 -> *📝 요약*
         .replace(/^##\s+요약\s*$/gm, '*📝 요약*')
         // 나머지 ## 제목 -> *제목*

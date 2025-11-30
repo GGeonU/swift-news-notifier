@@ -11,6 +11,7 @@ import {
   ArticleSummarizedEvent,
   ARTICLE_EVENTS,
 } from '../events/article.events';
+import { ArticleSummaryDto } from './dto/article-summary.dto';
 
 @Injectable()
 export class SummaryService {
@@ -45,17 +46,18 @@ export class SummaryService {
 
     try {
       const result = await this.processArticle(event.url);
+      const { articleSummary } = result;
 
       this.logger.log(
-        `Emitting article.summarized event for: ${event.title}`,
+        `Emitting article.summarized event for: ${articleSummary.title}`,
       );
       this.eventEmitter.emit(
         ARTICLE_EVENTS.SUMMARIZED,
         new ArticleSummarizedEvent(
-          event.title,
+          articleSummary.title,
           result.originalUrl,
-          result.translation,
-          result.summary,
+          articleSummary.summary,
+          articleSummary.toMarkdown(),
         ),
       );
     } catch (error) {
@@ -68,8 +70,7 @@ export class SummaryService {
 
   async processArticle(url: string): Promise<{
     originalUrl: string;
-    translation: string;
-    summary: string;
+    articleSummary: ArticleSummaryDto;
   }> {
     this.logger.log(`Processing article: ${url}`);
 
@@ -77,7 +78,6 @@ export class SummaryService {
 당신은 Swift/iOS 기술 아티클 요약 전문가입니다.
 
 **임무: 아래 URL의 아티클을 읽고 매우 짧게 요약하세요.**
-
 **중요: 전체 아티클을 번역하지 마세요! 핵심만 간단히 요약하세요!**
 
 **주요 내용 (1-2줄):**
@@ -88,12 +88,15 @@ export class SummaryService {
 - 가장 중요한 핵심 포인트만 추출
 - 각 포인트는 한 줄로 간결하게
 - 기술 용어는 영어로 유지, 나머지는 한국어로 번역
-- 마크다운 Bullet Point 형식 (* 로 시작)
+- 마크다운 Bullet Point 형식 (- 로 시작)
 
 **URL:**
 ${url}
 
 **출력 형식 (이 형식만 출력하세요):**
+## 제목
+[아티클 제목 원문 그대로]
+
 ## 주요 내용
 [1-2줄 설명]
 
@@ -105,16 +108,30 @@ ${url}
     try {
       const result = await this.generativeModel.generateContent(prompt);
       const response = result.response.text();
-      const translationMatch = response.match(/## 주요 내용\s+([\s\S]*?)(?=\n## 요약|$)/);
-      const summaryMatch = response.match(/## 요약\s+([\s\S]*?)$/);
 
-      const translation = translationMatch ? translationMatch[1].trim() : '';
-      const summary = summaryMatch ? summaryMatch[1].trim() : response;
+      // 각 섹션 파싱
+      const titleMatch = response.match(/## 제목\s+([\s\S]*?)(?=\n## |$)/);
+      const summaryMatch = response.match(/## 주요 내용\s+([\s\S]*?)(?=\n## |$)/);
+      const bulletsMatch = response.match(/## 요약\s+([\s\S]*?)$/);
+
+      const title = titleMatch ? titleMatch[1].trim() : '제목 없음';
+      const summary = summaryMatch ? summaryMatch[1].trim() : '';
+
+      // Bullet points 파싱 (-, *, • 등 다양한 형식 지원)
+      let bullets: string[] = [];
+      if (bulletsMatch) {
+        bullets = bulletsMatch[1]
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+          .map((line) => line.replace(/^[-*•]\s*/, ''));
+      }
+
+      const articleSummary = new ArticleSummaryDto(title, summary, bullets);
 
       return {
         originalUrl: url,
-        translation,
-        summary,
+        articleSummary,
       };
     } catch (error) {
       this.logger.error(`Article processing failed: ${error.message}`);
