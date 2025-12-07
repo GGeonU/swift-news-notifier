@@ -3,9 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { OnEvent } from '@nestjs/event-emitter';
 import { WebClient } from '@slack/web-api';
 import {
-  ArticleSummarizedEvent,
+  ArticleSummaryCompletedEvent,
+  ArticleSummaryFailedEvent,
   ARTICLE_EVENTS,
 } from '../events/article.events';
+import { ArticleSummary } from 'src/shared/article-summary';
 
 export interface ArticleNotification {
   title: string;
@@ -18,13 +20,13 @@ export interface ArticleNotification {
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
   private readonly slackClient: WebClient | null;
-  private readonly slackChannelId: string | undefined;
+  private readonly slackChannelID: string | undefined;
 
   constructor(private configService: ConfigService) {
     const slackToken = this.configService.get<string>('SLACK_BOT_TOKEN');
-    this.slackChannelId = this.configService.get<string>('SLACK_CHANNEL_ID');
+    this.slackChannelID = this.configService.get<string>('SLACK_CHANNEL_ID');
 
-    if (!slackToken || !this.slackChannelId) {
+    if (!slackToken || !this.slackChannelID) {
       this.logger.warn(
         'SLACK_BOT_TOKEN or SLACK_CHANNEL_ID is not defined. Notifications will be skipped.',
       );
@@ -36,29 +38,49 @@ export class NotificationService {
   }
 
   /**
-   * article.summarized 이벤트 리스너
+   * article.summary.completed 이벤트 리스너
    * 아티클 요약이 완료되면 자동으로 Slack 알림 전송
    */
-  @OnEvent(ARTICLE_EVENTS.SUMMARIZED)
-  async handleArticleSummarized(event: ArticleSummarizedEvent) {
+  @OnEvent(ARTICLE_EVENTS.SUMMARY_COMPLETED)
+  async handleArticleSummaryCompleted(event: ArticleSummaryCompletedEvent) {
     this.logger.log(
-      `Received article.summarized event for: ${event.title}`,
+      `Received article.summarized event for: ${event.article.title}`,
     );
 
     try {
-      await this.sendToSlack({
-        title: event.title,
-        url: event.url,
-        translation: event.translation,
-        summary: event.summary,
-      });
-
+      await this.sendArticleToSlack(event.article);
       this.logger.log(
-        `Successfully sent Slack notification for: ${event.title}`,
+        `Successfully sent Slack notification for: ${event.article.title}`,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to send Slack notification for "${event.title}": ${error.message}`,
+        `Failed to send Slack notification for "${event.article.title}": ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * article.summary.failed 이벤트 리스너
+   * 아티클 요약이 실패하면 에러 알림 전송
+   */
+  @OnEvent(ARTICLE_EVENTS.SUMMARY_FAILED)
+  async handleArticleSummaryFailed(event: ArticleSummaryFailedEvent) {
+    this.logger.log(
+      `Received article.summary.failed event for: ${event.title}`,
+    );
+
+    try {
+      await this.sendArticleToSlack({
+        title: '아티클 요약 실패',
+        url: event.url,
+        summary: `❌ 아티클을 요약할 수 없습니다.\n${event.errorMessage}`,
+      });
+      this.logger.log(
+        `Successfully sent error notification for: ${event.title}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send error notification for "${event.title}": ${error.message}`,
       );
     }
   }
@@ -66,8 +88,8 @@ export class NotificationService {
   /**
    * Slack으로 단일 아티클 알림 전송
    */
-  async sendToSlack(article: ArticleNotification): Promise<void> {
-    if (!this.slackClient || !this.slackChannelId) {
+  async sendArticleToSlack(article: ArticleSummary): Promise<void> {
+    if (!this.slackClient || !this.slackChannelID) {
       this.logger.warn('Slack client not configured. Skipping notification.');
       return;
     }
@@ -76,7 +98,7 @@ export class NotificationService {
       const blocks = this.formatSlackMessage(article);
 
       await this.slackClient.chat.postMessage({
-        channel: this.slackChannelId,
+        channel: this.slackChannelID,
         blocks,
         text: `📰 ${article.title}`,
         mrkdwn: true
@@ -89,30 +111,30 @@ export class NotificationService {
     }
   }
 
-  /**
-   * 여러 아티클을 Slack으로 전송
-   */
-  async sendMultipleToSlack(articles: ArticleNotification[]): Promise<void> {
-    if (articles.length === 0) {
-      this.logger.log('No articles to send');
-      return;
-    }
+  // /**
+  //  * 여러 아티클을 Slack으로 전송
+  //  */
+  // async sendMultipleToSlack(articles: ArticleNotification[]): Promise<void> {
+  //   if (articles.length === 0) {
+  //     this.logger.log('No articles to send');
+  //     return;
+  //   }
 
-    this.logger.log(`Sending ${articles.length} articles to Slack...`);
+  //   this.logger.log(`Sending ${articles.length} articles to Slack...`);
 
-    const results = await Promise.allSettled(
-      articles.map((article) => this.sendToSlack(article)),
-    );
+  //   const results = await Promise.allSettled(
+  //     articles.map((article) => this.sendArticleToSlack(article)),
+  //   );
 
-    const successCount = results.filter((r) => r.status === 'fulfilled').length;
-    const failedCount = results.length - successCount;
+  //   const successCount = results.filter((r) => r.status === 'fulfilled').length;
+  //   const failedCount = results.length - successCount;
 
-    if (failedCount > 0) {
-      this.logger.warn(`${failedCount} notifications failed to send`);
-    }
+  //   if (failedCount > 0) {
+  //     this.logger.warn(`${failedCount} notifications failed to send`);
+  //   }
 
-    this.logger.log(`Successfully sent ${successCount}/${articles.length} notifications`);
-  }
+  //   this.logger.log(`Successfully sent ${successCount}/${articles.length} notifications`);
+  // }
 
   /**
    * Slack 메시지 포맷팅

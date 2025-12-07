@@ -100,12 +100,12 @@ export class FetcherService {
   }
 
   /**
-   * Diff에서 추가된 아티클 링크만 추출
+   * Git diff -> Article 변환
    */
   parseNewArticlesFromDiff(diff: string): Article[] {
     const lines = diff.split('\n');
     const articles: Article[] = [];
-    const linkRegex = /\[(.+?)\]\((.+?)\)/g; // [Title](URL) 패턴
+    const linkRegex = /\[(.+?)\]\((.+?)\)/g; // [Title](URL) 형식
 
     for (const line of lines) {
       // 추가된 라인만 처리 ('+' 시작)
@@ -120,7 +120,6 @@ export class FetcherService {
               title,
               url,
               discoveredAt: new Date(),
-              source: 'github',
             });
           }
         }
@@ -243,7 +242,7 @@ export class FetcherService {
       for (const article of newArticles) {
         this.logger.log(`Emitting article.fetched event for: ${article.title} from ${repoKey}`);
         this.eventEmitter.emit(
-          ARTICLE_EVENTS.FETCHED,
+          ARTICLE_EVENTS.NEW_FETCHED,
           new ArticleFetchedEvent(article.title, article.url),
         );
       }
@@ -332,7 +331,7 @@ export class FetcherService {
    * 매일 오전 9시에 자동으로 새로운 아티클 체크
    */
   @Cron('0 9 * * *', {
-    name: 'check-articles-morning',
+    name: 'check-new-articles-daily',
     timeZone: 'Asia/Seoul',
   })
   async scheduledCheckMorning() {
@@ -356,15 +355,14 @@ export class FetcherService {
 
     try {
       const articles = await this.fetchNewArticles();
-
       if (articles.length === 0) {
-        await this.notificationService.sendToSlack({
+        await this.notificationService.sendArticleToSlack({
           title: '알림 체크 완료',
           url: 'https://github.com/SAllen0400/swift-news',
           summary: '✅ 새로운 아티클이 없습니다.',
         });
       } else {
-        await this.notificationService.sendToSlack({
+        await this.notificationService.sendArticleToSlack({
           title: '알림 체크 완료',
           url: 'https://github.com/SAllen0400/swift-news',
           summary: `✅ 총 ${articles.length}개의 새로운 아티클이 있습니다!\n귀여운 고라파덕이 아티클을 요약하고 있습니다...`,
@@ -372,7 +370,7 @@ export class FetcherService {
       }
     } catch (error) {
       this.logger.error(`Check articles request failed: ${error.message}`);
-      await this.notificationService.sendToSlack({
+      await this.notificationService.sendArticleToSlack({
         title: '알림 체크 실패',
         url: 'https://github.com/SAllen0400/swift-news',
         summary: `❌ 오류가 발생했습니다: ${error.message}`,

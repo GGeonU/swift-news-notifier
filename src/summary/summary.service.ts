@@ -8,10 +8,16 @@ import {
 } from '@google/generative-ai';
 import {
   ArticleFetchedEvent,
-  ArticleSummarizedEvent,
+  ArticleSummaryCompletedEvent,
+  ArticleSummaryFailedEvent,
   ARTICLE_EVENTS,
 } from '../events/article.events';
-import { ArticleSummaryDto } from './dto/article-summary.dto';
+import { ArticleSummary } from '../shared/article-summary';
+import {
+  SummaryError,
+  UnexpectedURLError,
+  SummaryFailedError,
+} from './summary.error';
 
 @Injectable()
 export class SummaryService {
@@ -36,49 +42,47 @@ export class SummaryService {
 
   /**
    * article.fetched 이벤트 리스너
-   * 새로운 아티클이 발견되면 자동으로 요약 처리
+   * 새로운 아티클이 발견되면 요약을 진행
    */
-  @OnEvent(ARTICLE_EVENTS.FETCHED)
-  async handleArticleFetched(event: ArticleFetchedEvent) {
-    this.logger.log(
-      `Received article.fetched event for: ${event.title}`,
-    );
+  @OnEvent(ARTICLE_EVENTS.NEW_FETCHED)
+  async handleNewArticleFetched(event: ArticleFetchedEvent) {
+    this.logger.log(`Received article.fetched event for: ${event.title}`,);
 
     try {
-      const result = await this.processArticle(event.url);
-      const { articleSummary } = result;
-
+      const article = await this.summarizeArticle(event.url);
       this.logger.log(
-        `Emitting article.summarized event for: ${articleSummary.title}`,
+        `Emitting article.summary.completed event for: ${article.title}`,
       );
       this.eventEmitter.emit(
-        ARTICLE_EVENTS.SUMMARIZED,
-        new ArticleSummarizedEvent(
-          articleSummary.title,
-          result.originalUrl,
-          articleSummary.summary,
-          articleSummary.toMarkdown(),
-        ),
+        ARTICLE_EVENTS.SUMMARY_COMPLETED,
+        new ArticleSummaryCompletedEvent(article),
       );
     } catch (error) {
       this.logger.error(
-        `Failed to process article "${event.title}": ${error.message}`,
+        `Emitting article.summary.failed event for: ${event.title}`,
       );
-      // 실패해도 다른 아티클 처리는 계속 진행
+      this.eventEmitter.emit(
+        ARTICLE_EVENTS.SUMMARY_FAILED,
+        new ArticleSummaryFailedEvent(
+          event.url, 
+          error.message
+        ),
+      );
     }
   }
 
-  async processArticle(url: string): Promise<{
-    originalUrl: string;
-    articleSummary: ArticleSummaryDto;
-  }> {
-    this.logger.log(`Processing article: ${url}`);
+  /**
+   * 실제 아티클 요약 진행
+   */
+  private async summarizeArticle(url: string): Promise<ArticleSummary> {
+    this.logger.log(`Summarizing article: ${url}`);
 
     const prompt = `
 당신은 Swift/iOS 기술 아티클 요약 전문가입니다.
 
 **임무: 아래 URL의 아티클을 읽고 매우 짧게 요약하세요.**
 **중요: 전체 아티클을 번역하지 마세요! 핵심만 간단히 요약하세요!**
+**예외: 링크의 내용을 가져오지 못하거나 요약을 진행할 수 없는 경우, 페이지에서 내용을 찾을 수 없는 경우 빈 문자열을 반환하세요.**
 
 **주요 내용 (1-2줄):**
 - 이 아티클이 무엇에 관한 것인지 한 문장으로 설명
@@ -105,38 +109,72 @@ ${url}
 - [핵심 포인트 1]
 - [핵심 포인트 2]
 - [핵심 포인트 3]
+
+**출력 예시:**
+## 제목
+What's new in Swift 6.1?
+
+## 주요 내용
+이 아티클은 Swift 6.1에 도입된 Concurrency 개선, Custom performance metrics, 그리고 Void 타입의 Codable 채택 등 주요 변경사항을 소개합니다. iOS 개발자들은 이를 통해 Swift의 최신 발전 방향을 이해하고 더 안전하며 효율적인 코드를 작성하는 데 필요한 인사이트를 얻을 수 있습니다.
+
+## 요약
+- Concurrency 관련하여 async let이 Sendable이 되고 actor 메서드에 isolated default arguments가 지원되는 등 안전성과 사용성이 개선되었습니다.
+- SE-0410을 통해 개발자가 직접 정의하는 Custom performance metrics를 지원하여 Swift 테스트 시 더욱 정밀한 성능 분석이 가능해졌습니다.
+- Void 타입이 Encodable 및 Decodable 프로토콜을 채택하여, 응답 바디가 없는 API 처리 시 코드를 간소화할 수 있습니다.
+- Swift Package Manager가 Swift 6 및 Swift 5 모드를 동시에 지원하여 패키지 호환성 및 마이그레이션 편의성이 향상되었습니다.
+- UnsafeRawBufferPointer의 일부 initializer가 Deprecate 되고, _Concurrency.AsyncStream이 Sendable이 되는 등 전반적인 타입 안전성과 개발 편의성이 강화되었습니다.
 `;
     try {
       const result = await this.generativeModel.generateContent(prompt);
       const response = result.response.text();
-
-      // 각 섹션 파싱
-      const titleMatch = response.match(/## 제목\s+([\s\S]*?)(?=\n## |$)/);
-      const summaryMatch = response.match(/## 주요 내용\s+([\s\S]*?)(?=\n## |$)/);
-      const bulletsMatch = response.match(/## 요약\s+([\s\S]*?)$/);
-
-      const title = titleMatch ? titleMatch[1].trim() : '제목 없음';
-      const summary = summaryMatch ? summaryMatch[1].trim() : '';
-
-      // Bullet points 파싱 (-, *, • 등 다양한 형식 지원)
-      let bullets: string[] = [];
-      if (bulletsMatch) {
-        bullets = bulletsMatch[1]
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-          .map((line) => line.replace(/^[-*•]\s*/, ''));
+      // 응답이 빈 문자열인 경우, 링크의 내용을 가져오지 못했다고 판단하고 에러 발생.
+      if (response.trim() === '') {
+        throw new UnexpectedURLError(
+          url,
+          '해당 링크의 내용을 가져올 수 없습니다. 링크를 확인한 후 다시 시도해주세요.'
+        );
       }
-
-      const articleSummary = new ArticleSummaryDto(title, summary, bullets);
-
-      return {
-        originalUrl: url,
-        articleSummary,
-      };
+      return this.parseSummary(url, response);
     } catch (error) {
-      this.logger.error(`Article processing failed: ${error.message}`);
-      throw new Error(`아티클 처리 실패: ${error.message}`);
+      if (error instanceof SummaryError) {
+        this.logger.error(`Summary failed: ${error.message}`);
+        throw error;
+      }
+      this.logger.error(`Unexpected error during article summary: ${error.message}`);
+      throw new SummaryFailedError(
+        url, 
+        `요약 진행 과정 중 예상치 못한 문제가 발생했습니다. 관리자에게 문의해주세요.`
+      );
     }
+  }
+
+  /**
+   * 응답 텍스트를 ArticleSummary 객체로 파싱
+   */
+  private parseSummary(url: string, response: string): ArticleSummary {
+    const titleMatch = response.match(/## 제목\s+([\s\S]*?)(?=\n## |$)/);
+    const summaryMatch = response.match(/## 주요 내용\s+([\s\S]*?)(?=\n## |$)/);
+    const bulletsMatch = response.match(/## 요약\s+([\s\S]*?)$/);
+
+    if (!titleMatch || !summaryMatch) {
+      throw new SummaryFailedError(
+        url, 
+        '요약 진행 과정 중 문제가 발생했습니다. 관리자에게 문의해주세요.'
+      );
+    }
+    
+    const title = titleMatch[1].trim();
+    const summary = summaryMatch[1].trim();
+
+    let bullets: string[] = [];
+    if (bulletsMatch) {
+      bullets = bulletsMatch[1]
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => line.replace(/^[-*•]\s*/, ''));
+    }
+
+    return new ArticleSummary(url, title, summary, bullets);
   }
 }
