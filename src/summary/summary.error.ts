@@ -17,7 +17,7 @@ export class SummaryError extends Error {
  */
 export class UnexpectedURLError extends SummaryError {
   constructor(url: string, reason: string) {
-    super(`URL 접근 실패: ${reason}`, url);
+    super(`URL 내용 가져오기 실패: ${reason}`, url);
     this.name = 'UnexpectedURLError';
   }
 }

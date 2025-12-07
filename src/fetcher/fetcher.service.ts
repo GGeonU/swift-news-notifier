@@ -5,9 +5,11 @@ import { Cron } from '@nestjs/schedule';
 import axios, { AxiosInstance } from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { Article, FetcherState, RepositoryState, RepositoryConfig, REPOSITORY } from './interfaces';
+import { Article, FetcherState, RepositoryState, RepositoryConfig } from './interfaces';
 import {
   ArticleFetchedEvent,
+  ArticleCheckCompletedEvent,
+  ArticleCheckFailedEvent,
   ARTICLE_EVENTS,
 } from '../events/article.events';
 import {
@@ -15,23 +17,21 @@ import {
   SummarizeArticleRequestedEvent,
   WEBHOOK_EVENTS,
 } from '../events/webhook.events';
-import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class FetcherService {
   private readonly logger = new Logger(FetcherService.name);
-  private readonly axiosInstance: AxiosInstance;
+  private readonly githubClient: AxiosInstance;
   private readonly stateFilePath: string;
   private readonly repository: RepositoryConfig;
 
   constructor(
     private configService: ConfigService,
     private eventEmitter: EventEmitter2,
-    private notificationService: NotificationService,
   ) {
     const githubToken = this.configService.get<string>('GITHUB_TOKEN');
 
-    this.axiosInstance = axios.create({
+    this.githubClient = axios.create({
       baseURL: 'https://api.github.com',
       headers: {
         Accept: 'application/vnd.github.v3+json',
@@ -39,24 +39,36 @@ export class FetcherService {
       },
     });
 
-    // Repository 설정
-    this.repository = REPOSITORY;
+    // Repository 설정 (환경변수에서 로드)
+    this.repository = {
+      owner: this.configService.get<string>('GITHUB_REPO_OWNER', 'SAllen0400'),
+      repo: this.configService.get<string>('GITHUB_REPO_NAME', 'swift-news'),
+      branch: this.configService.get<string>('GITHUB_REPO_BRANCH', 'main'),
+    };
 
-    // 상태 파일 경로 설정
-    this.stateFilePath = path.join(process.cwd(), 'data', 'fetcher-state.json');
+    // 상태 파일 경로 설정 (환경변수에서 로드)
+    const stateFilePath = this.configService.get<string>(
+      'FETCHER_STATE_FILE_PATH',
+      './data/fetcher-state.json',
+    );
+
+    // 상대 경로인 경우 절대 경로로 변환
+    this.stateFilePath = path.isAbsolute(stateFilePath)
+      ? stateFilePath
+      : path.join(process.cwd(), stateFilePath);
   }
 
   /**
    * Repository 키 생성 (owner/repo 형식)
    */
-  private getRepositoryKey(owner: string, repo: string): string {
+  private buildRepositoryKey(owner: string, repo: string): string {
     return `${owner}/${repo}`;
   }
 
   /**
    * 최신 commit SHA 가져오기
    */
-  async getLatestCommitSha(
+  async getLatestCommitSHA(
     owner: string,
     repo: string,
     branch: string = 'main',
@@ -64,8 +76,7 @@ export class FetcherService {
     try {
       const url = `/repos/${owner}/${repo}/commits/${branch}`;
       this.logger.log(`Fetching latest commit SHA from: ${url}`);
-
-      const response = await this.axiosInstance.get(url);
+      const response = await this.githubClient.get(url);
       return response.data.sha;
     } catch (error) {
       this.logger.error(`Failed to fetch latest commit SHA: ${error.message}`);
@@ -86,9 +97,9 @@ export class FetcherService {
       const url = `/repos/${owner}/${repo}/compare/${baseSha}...${headSha}`;
       this.logger.log(`Fetching diff: ${baseSha}...${headSha}`);
 
-      const response = await this.axiosInstance.get(url, {
+      const response = await this.githubClient.get(url, {
         headers: {
-          Accept: 'application/vnd.github.diff', // diff 형식으로 받기
+          Accept: 'application/vnd.github.diff',
         },
       });
 
@@ -100,12 +111,17 @@ export class FetcherService {
   }
 
   /**
-   * Git diff -> Article 변환
+   * Git diff에서 새로운 아티클 파싱
+   * - Markdown 링크 패턴: [제목](URL)
+   * - 추가된 라인만 처리 ('+' 시작)
+   * - YouTube 링크는 제외
    */
   parseNewArticlesFromDiff(diff: string): Article[] {
     const lines = diff.split('\n');
     const articles: Article[] = [];
-    const linkRegex = /\[(.+?)\]\((.+?)\)/g; // [Title](URL) 형식
+    // Markdown 링크 정규식: [제목](URL) 형식 매칭
+    // 캡처 그룹: $1=제목, $2=URL
+    const linkRegex = /\[(.+?)\]\((.+?)\)/g;
 
     for (const line of lines) {
       // 추가된 라인만 처리 ('+' 시작)
@@ -131,7 +147,7 @@ export class FetcherService {
   }
 
   /**
-   * 저장된 상태 불러오기
+   * 저장된 상태 불러오기 (첫 실행 시에는 null 반환)
    */
   async loadState(): Promise<FetcherState | null> {
     try {
@@ -157,7 +173,7 @@ export class FetcherService {
   }
 
   /**
-   * 상태 저장하기
+   * FetcherState를 파일에 저장
    */
   async saveState(state: FetcherState): Promise<void> {
     try {
@@ -177,9 +193,9 @@ export class FetcherService {
     }
   }
 
-  /**
-   * 최근 N개의 commit SHA 목록 가져오기
-   */
+  // /**
+  //  * 최근 N개의 commit SHA 목록 가져오기
+  //  */
   async getRecentCommits(
     owner: string,
     repo: string,
@@ -190,15 +206,13 @@ export class FetcherService {
     try {
       const url = `/repos/${owner}/${repo}/commits`;
       this.logger.log(`Fetching recent ${count} commits from: ${url}${filePath ? ` (path: ${filePath})` : ''}`);
-
-      const response = await this.axiosInstance.get(url, {
+      const response = await this.githubClient.get(url, {
         params: {
           sha: branch,
           per_page: count,
           ...(filePath && { path: filePath }),
         },
       });
-
       return response.data.map((commit: any) => commit.sha);
     } catch (error) {
       this.logger.error(`Failed to fetch recent commits: ${error.message}`);
@@ -208,18 +222,19 @@ export class FetcherService {
 
   /**
    * 단일 Repository에서 새로운 아티클 수집
+   * 순수하게 아티클 목록만 반환하고, 이벤트 발행과 상태 업데이트는 호출자가 담당
    */
   private async fetchFromRepository(
     repoConfig: RepositoryConfig,
     state: FetcherState,
-  ): Promise<Article[]> {
+  ): Promise<{ articles: Article[]; latestSHA: string }> {
     const { owner, repo, branch = 'main' } = repoConfig;
-    const repoKey = this.getRepositoryKey(owner, repo);
+    const repoKey = this.buildRepositoryKey(owner, repo);
 
     this.logger.log(`Checking repository: ${repoKey}`);
 
     // 1. 최신 commit SHA 가져오기
-    const latestSha = await this.getLatestCommitSha(owner, repo, branch);
+    const latestSHA = await this.getLatestCommitSHA(owner, repo, branch);
 
     // 2. 해당 Repository의 상태 가져오기
     const repoState = state.repositories[repoKey];
@@ -228,76 +243,52 @@ export class FetcherService {
     if (!repoState) {
       this.logger.log(`First run for ${repoKey}. Processing recent commits...`);
 
-      // 최근 1개 커밋 가져오기
-      const recentCommits = await this.getRecentCommits(owner, repo, branch, 1);
+      // 최근 2개 커밋 가져오기
+      const recentCommits = await this.getRecentCommits(owner, repo, branch, 2);
+      this.logger.log(`Recent commits: ${JSON.stringify(recentCommits)}`);
+
+      // 커밋이 1개만 있으면 diff 없이 빈 배열 반환
+      if (recentCommits.length < 2) {
+        this.logger.log(`First run for ${repoKey}: Only one commit exists, no diff to process`);
+        return { articles: [], latestSHA };
+      }
 
       // 가장 오래된 커밋부터 최신 커밋까지의 diff 가져오기
       const oldestSha = recentCommits[recentCommits.length - 1];
-      const diff = await this.getCommitDiff(owner, repo, oldestSha, latestSha);
+      this.logger.log(`Comparing commits: oldestSha=${oldestSha}, latestSHA=${latestSHA}`);
+      const diff = await this.getCommitDiff(owner, repo, oldestSha, latestSHA);
 
       // 새로운 아티클 파싱
       const newArticles = this.parseNewArticlesFromDiff(diff);
 
-      // 각 아티클마다 이벤트 발행
-      for (const article of newArticles) {
-        this.logger.log(`Emitting article.fetched event for: ${article.title} from ${repoKey}`);
-        this.eventEmitter.emit(
-          ARTICLE_EVENTS.NEW_FETCHED,
-          new ArticleFetchedEvent(article.title, article.url),
-        );
-      }
-
-      // 상태 저장
-      state.repositories[repoKey] = {
-        owner,
-        repo,
-        lastProcessedCommitSha: latestSha,
-        lastCheckedAt: new Date(),
-        totalArticlesProcessed: newArticles.length,
-      };
-
       this.logger.log(`First run for ${repoKey}: Found ${newArticles.length} articles from recent commits`);
-      return newArticles;
+      return { articles: newArticles, latestSHA };
     }
 
     // 3. 변경사항이 있는지 확인
-    if (repoState.lastProcessedCommitSha === latestSha) {
+    if (repoState.lastProcessedCommitSHA === latestSHA) {
       this.logger.log(`No new commits in ${repoKey}.`);
-      return [];
+      return { articles: [], latestSHA };
     }
 
     // 4. Diff 가져오기
     const diff = await this.getCommitDiff(
       owner,
       repo,
-      repoState.lastProcessedCommitSha,
-      latestSha,
+      repoState.lastProcessedCommitSHA,
+      latestSHA,
     );
 
     // 5. 새로운 아티클 파싱
     const newArticles = this.parseNewArticlesFromDiff(diff);
 
-    // 6. 각 아티클마다 이벤트 발행
-    for (const article of newArticles) {
-      this.logger.log(`Emitting article.fetched event for: ${article.title} from ${repoKey}`);
-      this.eventEmitter.emit(
-        ARTICLE_EVENTS.FETCHED,
-        new ArticleFetchedEvent(article.title, article.url),
-      );
-    }
-
-    // 7. 상태 업데이트
-    repoState.lastProcessedCommitSha = latestSha;
-    repoState.lastCheckedAt = new Date();
-    repoState.totalArticlesProcessed += newArticles.length;
-
     this.logger.log(`Found ${newArticles.length} new articles from ${repoKey}`);
-    return newArticles;
+    return { articles: newArticles, latestSHA };
   }
 
   /**
    * Repository에서 새로운 아티클 수집 (메인 로직)
-   * 각 아티클마다 'article.fetched' 이벤트를 발행
+   * 아티클을 수집하고, 이벤트를 발행하며, 상태를 업데이트함
    */
   async fetchNewArticles(): Promise<Article[]> {
     this.logger.log('Starting to fetch new articles...');
@@ -311,17 +302,45 @@ export class FetcherService {
       state = { repositories: {} };
     }
 
-    // 2. 단일 Repository 처리
-    try {
-      const articles = await this.fetchFromRepository(this.repository, state);
+    const { owner, repo } = this.repository;
+    const repoKey = this.buildRepositoryKey(owner, repo);
 
-      // 3. 상태 저장
+    try {
+      // 2. Repository에서 아티클 수집
+      const { articles, latestSHA } = await this.fetchFromRepository(this.repository, state);
+
+      // 3. 각 아티클마다 이벤트 발행
+      for (const article of articles) {
+        this.logger.log(`Emitting article.fetched event for: ${article.title} from ${repoKey}`);
+        this.eventEmitter.emit(
+          ARTICLE_EVENTS.NEW_FETCHED,
+          new ArticleFetchedEvent(article.title, article.url),
+        );
+      }
+
+      // 4. 상태 업데이트
+      if (!state.repositories[repoKey]) {
+        // 첫 실행: 새로운 상태 생성
+        state.repositories[repoKey] = {
+          owner,
+          repo,
+          lastProcessedCommitSHA: latestSHA,
+          lastCheckedAt: new Date(),
+          totalArticlesProcessed: articles.length,
+        };
+      } else {
+        // 기존 실행: 상태 업데이트
+        state.repositories[repoKey].lastProcessedCommitSHA = latestSHA;
+        state.repositories[repoKey].lastCheckedAt = new Date();
+        state.repositories[repoKey].totalArticlesProcessed += articles.length;
+      }
+
+      // 5. 상태 저장
       await this.saveState(state);
 
       this.logger.log(`Successfully fetched ${articles.length} new articles`);
       return articles;
     } catch (error) {
-      const repoKey = this.getRepositoryKey(this.repository.owner, this.repository.repo);
       this.logger.error(`Failed to fetch from ${repoKey}: ${error.message}`);
       throw error;
     }
@@ -338,6 +357,7 @@ export class FetcherService {
     this.logger.log('Running scheduled article check (Morning 9:00 AM)...');
     try {
       await this.fetchNewArticles();
+      this.logger.log('Scheduled article check completed successfully');
     } catch (error) {
       this.logger.error(`Scheduled check failed: ${error.message}`);
     }
@@ -355,26 +375,22 @@ export class FetcherService {
 
     try {
       const articles = await this.fetchNewArticles();
-      if (articles.length === 0) {
-        await this.notificationService.sendArticleToSlack({
-          title: '알림 체크 완료',
-          url: 'https://github.com/SAllen0400/swift-news',
-          summary: '✅ 새로운 아티클이 없습니다.',
-        });
-      } else {
-        await this.notificationService.sendArticleToSlack({
-          title: '알림 체크 완료',
-          url: 'https://github.com/SAllen0400/swift-news',
-          summary: `✅ 총 ${articles.length}개의 새로운 아티클이 있습니다!\n귀여운 고라파덕이 아티클을 요약하고 있습니다...`,
-        });
-      }
+      const message = articles.length === 0
+        ? '✅ 새로운 아티클이 없습니다.'
+        : `✅ 총 ${articles.length}개의 새로운 아티클이 있습니다!\n귀여운 고라파덕이 아티클을 요약하고 있습니다...`;
+
+      this.eventEmitter.emit(
+        ARTICLE_EVENTS.CHECK_COMPLETED,
+        new ArticleCheckCompletedEvent(articles.length, message),
+      );
     } catch (error) {
       this.logger.error(`Check articles request failed: ${error.message}`);
-      await this.notificationService.sendArticleToSlack({
-        title: '알림 체크 실패',
-        url: 'https://github.com/SAllen0400/swift-news',
-        summary: `❌ 오류가 발생했습니다: ${error.message}`,
-      });
+
+      // article.check.failed 이벤트 발행
+      this.eventEmitter.emit(
+        ARTICLE_EVENTS.CHECK_FAILED,
+        new ArticleCheckFailedEvent(`아티클 체크 중 오류가 발생했습니다: ${error.message}`),
+      );
     }
   }
 
@@ -390,7 +406,7 @@ export class FetcherService {
 
     // article.fetched 이벤트를 발행하면 SummaryService가 자동으로 처리
     this.eventEmitter.emit(
-      ARTICLE_EVENTS.FETCHED,
+      ARTICLE_EVENTS.NEW_FETCHED,
       new ArticleFetchedEvent('수동 요청 아티클', event.url),
     );
   }

@@ -5,9 +5,11 @@ import { WebClient, Block, KnownBlock } from '@slack/web-api';
 import {
   ArticleSummaryCompletedEvent,
   ArticleSummaryFailedEvent,
+  ArticleCheckCompletedEvent,
+  ArticleCheckFailedEvent,
   ARTICLE_EVENTS,
 } from '../events/article.events';
-import { ArticleSummary } from 'src/shared/article-summary';
+import { ArticleSummary } from '../shared/article-summary';
 
 @Injectable()
 export class NotificationService {
@@ -75,6 +77,57 @@ export class NotificationService {
   }
 
   /**
+   * article.check.completed 이벤트 리스너
+   * 아티클 체크가 완료되면 알림 전송
+   */
+  @OnEvent(ARTICLE_EVENTS.CHECK_COMPLETED)
+  async handleArticleCheckCompleted(event: ArticleCheckCompletedEvent) {
+    this.logger.log(
+      `Received article.check.completed event: ${event.articleCount} articles found`,
+    );
+
+    const article = new ArticleSummary(
+      'https://github.com/SAllen0400/swift-news',
+      '알림 체크 완료',
+      event.message,
+      [],
+    );
+
+    const blocks = this.buildArticleSummaryBlocks(article);
+    try {
+      await this.sendSlackMessage(blocks);
+      this.logger.log('Successfully sent check completed notification');
+    } catch (error) {
+      this.logger.error(
+        `Failed to send check completed notification: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * article.check.failed 이벤트 리스너
+   * 아티클 체크가 실패하면 에러 알림 전송
+   */
+  @OnEvent(ARTICLE_EVENTS.CHECK_FAILED)
+  async handleArticleCheckFailed(event: ArticleCheckFailedEvent) {
+    this.logger.log('Received article.check.failed event');
+
+    const blocks = this.buildErrorMessageBlocks(
+      'https://github.com/SAllen0400/swift-news',
+      event.errorMessage,
+    );
+
+    try {
+      await this.sendSlackMessage(blocks);
+      this.logger.log('Successfully sent check failed notification');
+    } catch (error) {
+      this.logger.error(
+        `Failed to send check failed notification: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Slack으로 메시지 전송 (아티클 요약 성공 또는 실패)
    */
   private async sendSlackMessage(blocks: (Block | KnownBlock)[]): Promise<void> {
@@ -98,7 +151,9 @@ export class NotificationService {
    * Slack 메시지 포맷팅 (아티클 요약 성공)
    */
   private buildArticleSummaryBlocks(article: ArticleSummary): (Block | KnownBlock)[] {
+    this.logger.log(`Original summary:\n${article.summary}`);
     const formattedSummary = this.convertToSlackMarkdown(article.summary);
+    this.logger.log(`Formatted summary:\n${formattedSummary}`);
 
     const blocks: (Block | KnownBlock)[] = [
       {
@@ -111,13 +166,25 @@ export class NotificationService {
       },
     ];
 
-    // 요약 섹션
+    // 주요 내용 섹션
     if (formattedSummary) {
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: formattedSummary,
+          text: `*🌐 주요 내용*\n${formattedSummary}`,
+        },
+      });
+    }
+
+    // 요약 Bullet points 섹션
+    if (article.bullets.length > 0) {
+      const formattedBullets = article.bullets.map(bullet => `• ${bullet}`).join('\n');
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*📝 요약*\n${formattedBullets}`,
         },
       });
     }
