@@ -8,7 +8,7 @@ import {
 
 /**
  * Webhook 요청을 이벤트로 변환하는 서비스
- * 직접 비즈니스 로직을 실행하지 않고, 이벤트를 발행하여 느슨한 결합 유지
+ * 직접 비즈니스 로직을 실행하지 않고, 이벤트를 발행하여 다른 모듈과 느슨한 결합 유지
  */
 @Injectable()
 export class WebhookService {
