@@ -1,6 +1,14 @@
+import { ArticleSummary } from '../shared/article-summary';
+
 /**
  * 아티클 관련 이벤트 정의
  */
+
+export const ARTICLE_EVENTS = {
+  NEW_FETCHED: 'article.new.fetched',
+  SUMMARY_COMPLETED: 'article.summary.completed',
+  SUMMARY_FAILED: 'article.summary.failed',
+} as const;
 
 /**
  * 새로운 아티클이 발견되었을 때 발행되는 이벤트
@@ -15,19 +23,18 @@ export class ArticleFetchedEvent {
 /**
  * 아티클 요약이 완료되었을 때 발행되는 이벤트
  */
-export class ArticleSummarizedEvent {
+export class ArticleSummaryCompletedEvent {
   constructor(
-    public readonly title: string,
-    public readonly url: string,
-    public readonly translation: string,
-    public readonly summary: string,
+    public readonly article: ArticleSummary,
   ) {}
 }
 
 /**
- * 이벤트 이름 Namespace
+ * 아티클 요약이 실패했을 때 발행되는 이벤트
  */
-export const ARTICLE_EVENTS = {
-  FETCHED: 'article.fetched',
-  SUMMARIZED: 'article.summarized',
-} as const;
+export class ArticleSummaryFailedEvent {
+  constructor(
+    public readonly url: string,
+    public readonly errorMessage: string,
+  ) {}
+}

@@ -7,9 +7,6 @@ export interface RepositoryConfig {
   branch?: string;
 }
 
-/**
- * 추적할 단일 Repository
- */
 export const REPOSITORY: RepositoryConfig = {
   owner: 'SAllen0400',
   repo: 'swift-news',
