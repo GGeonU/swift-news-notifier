@@ -1,20 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OnEvent } from '@nestjs/event-emitter';
-import { WebClient } from '@slack/web-api';
+import { WebClient, Block, KnownBlock } from '@slack/web-api';
 import {
   ArticleSummaryCompletedEvent,
   ArticleSummaryFailedEvent,
   ARTICLE_EVENTS,
 } from '../events/article.events';
 import { ArticleSummary } from 'src/shared/article-summary';
-
-export interface ArticleNotification {
-  title: string;
-  url: string;
-  summary: string;
-  translation?: string;
-}
 
 @Injectable()
 export class NotificationService {
@@ -46,9 +39,9 @@ export class NotificationService {
     this.logger.log(
       `Received article.summarized event for: ${event.article.title}`,
     );
-
+    const blocks = this.buildArticleSummaryBlocks(event.article);
     try {
-      await this.sendArticleToSlack(event.article);
+      await this.sendSlackMessage(blocks);
       this.logger.log(
         `Successfully sent Slack notification for: ${event.article.title}`,
       );
@@ -66,87 +59,52 @@ export class NotificationService {
   @OnEvent(ARTICLE_EVENTS.SUMMARY_FAILED)
   async handleArticleSummaryFailed(event: ArticleSummaryFailedEvent) {
     this.logger.log(
-      `Received article.summary.failed event for: ${event.title}`,
+      `Received article.summary.failed event for: ${event.url}`,
     );
-
+    const blocks = this.buildErrorMessageBlocks(event.url, event.errorMessage);
     try {
-      await this.sendArticleToSlack({
-        title: '아티클 요약 실패',
-        url: event.url,
-        summary: `❌ 아티클을 요약할 수 없습니다.\n${event.errorMessage}`,
-      });
+      await this.sendSlackMessage(blocks);
       this.logger.log(
-        `Successfully sent error notification for: ${event.title}`,
+        `Successfully sent error notification for: ${event.url}`,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to send error notification for "${event.title}": ${error.message}`,
+        `Failed to send error notification for "${event.url}": ${error.message}`,
       );
     }
   }
 
   /**
-   * Slack으로 단일 아티클 알림 전송
+   * Slack으로 메시지 전송 (아티클 요약 성공 또는 실패)
    */
-  async sendArticleToSlack(article: ArticleSummary): Promise<void> {
+  private async sendSlackMessage(blocks: (Block | KnownBlock)[]): Promise<void> {
     if (!this.slackClient || !this.slackChannelID) {
       this.logger.warn('Slack client not configured. Skipping notification.');
       return;
     }
-
     try {
-      const blocks = this.formatSlackMessage(article);
-
       await this.slackClient.chat.postMessage({
         channel: this.slackChannelID,
         blocks,
-        text: `📰 ${article.title}`,
         mrkdwn: true
       });
-
-      this.logger.log(`Slack notification sent: ${article.title}`);
     } catch (error) {
-      this.logger.error(`Failed to send Slack notification: ${error.message}`);
-      throw new Error(`Slack 알림 전송 실패: ${error.message}`);
+      this.logger.error(`Failed to send message: ${error.message}`);
+      throw new Error(`Slack 메시지 전송 실패: ${error.message}`);
     }
   }
 
-  // /**
-  //  * 여러 아티클을 Slack으로 전송
-  //  */
-  // async sendMultipleToSlack(articles: ArticleNotification[]): Promise<void> {
-  //   if (articles.length === 0) {
-  //     this.logger.log('No articles to send');
-  //     return;
-  //   }
-
-  //   this.logger.log(`Sending ${articles.length} articles to Slack...`);
-
-  //   const results = await Promise.allSettled(
-  //     articles.map((article) => this.sendArticleToSlack(article)),
-  //   );
-
-  //   const successCount = results.filter((r) => r.status === 'fulfilled').length;
-  //   const failedCount = results.length - successCount;
-
-  //   if (failedCount > 0) {
-  //     this.logger.warn(`${failedCount} notifications failed to send`);
-  //   }
-
-  //   this.logger.log(`Successfully sent ${successCount}/${articles.length} notifications`);
-  // }
-
   /**
-   * Slack 메시지 포맷팅
+   * Slack 메시지 포맷팅 (아티클 요약 성공)
    */
-  private formatSlackMessage(article: ArticleNotification) {
+  private buildArticleSummaryBlocks(article: ArticleSummary): (Block | KnownBlock)[] {
     const formattedSummary = this.convertToSlackMarkdown(article.summary);
 
-    const blocks: any[] = [
+    const blocks: (Block | KnownBlock)[] = [
       {
-        type: 'header' as const,
+        type: 'header',
         text: {
-          type: 'plain_text' as const,
+          type: 'plain_text',
           text: `📰 ${article.title}`,
           emoji: true,
         },
@@ -156,9 +114,9 @@ export class NotificationService {
     // 요약 섹션
     if (formattedSummary) {
       blocks.push({
-        type: 'section' as const,
+        type: 'section',
         text: {
-          type: 'mrkdwn' as const,
+          type: 'mrkdwn',
           text: formattedSummary,
         },
       });
@@ -166,17 +124,52 @@ export class NotificationService {
 
     // 원문 링크
     blocks.push({
-      type: 'section' as const,
+      type: 'section',
       text: {
-        type: 'mrkdwn' as const,
+        type: 'mrkdwn',
         text: `<${article.url}|🔗 원문 링크 보기>`,
       },
     });
 
     // 구분선
     blocks.push({
-      type: 'divider' as const,
+      type: 'divider',
     });
+
+    return blocks;
+  }
+
+  /**
+   * Slack 에러 메시지 포맷팅 (아티클 요약 실패)
+   */
+  private buildErrorMessageBlocks(url: string, errorMessage: string): (Block | KnownBlock)[] {
+    const blocks: (Block | KnownBlock)[] = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '❌ 아티클 요약 실패',
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'plain_text',
+          text: errorMessage,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*URL:*\n${url}`,
+        },
+      },
+      {
+        type: 'divider',
+      },
+    ];
 
     return blocks;
   }
@@ -185,7 +178,6 @@ export class NotificationService {
    * 마크다운을 Slack mrkdwn 형식으로 변환
    */
   private convertToSlackMarkdown(text: string): string {
-    console.log(text);
     return (
       text
         // ## 번역 -> *🌐 번역*
@@ -213,38 +205,4 @@ export class NotificationService {
         .trim()
     );
   }
-
-//   /**
-//    * 테스트 메시지 전송
-//    */
-//   async sendTestMessage(): Promise<void> {
-//     const testArticle: ArticleNotification = {
-//       title: 'Swift 6.0의 새로운 기능 소개',
-//       url: 'https://example.com/swift-6-features',
-//       translation: `## 번역
-
-// Swift 6.0은 **동시성 안정성**을 크게 개선하고 새로운 기능을 도입했습니다.
-
-// 주요 변경사항:
-// - *Sendable* 프로토콜 강화
-// - \`async/await\` 패턴 개선
-// - **Data race 감지** 기능 추가
-
-// 코드 예시:
-// \`\`\`swift
-// actor DataManager {
-//     func fetchData() async throws -> Data {
-//         // 안전한 동시성 처리
-//     }
-// }
-// \`\`\``,
-//       summary: `## 요약
-
-// • Swift 6.0의 가장 큰 변화는 **컴파일 타임 데이터 레이스 감지**입니다.
-// • \`Sendable\` 프로토콜이 더 엄격해져서 동시성 안전성이 향상되었습니다.
-// • 기존 코드에서 마이그레이션이 필요할 수 있으니 [마이그레이션 가이드](https://swift.org/migration)를 참고하세요.`,
-//     };
-
-//     await this.sendToSlack(testArticle);
-//   }
 }

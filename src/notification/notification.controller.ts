@@ -1,8 +1,5 @@
 import {
-  Controller,
-  Post,
-  HttpException,
-  HttpStatus,
+  Controller
 } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 
@@ -12,24 +9,6 @@ export class NotificationController {
     private readonly notificationService: NotificationService,
   ) {}
 
-  // /**
-  //  * POST /notification/test
-  //  * Slack 연동 테스트
-  //  */
-  // @Post('test')
-  // async testSlackNotification(): Promise<{ success: boolean; message: string }> {
-  //   try {
-  //     await this.notificationService.sendTestMessage();
-
-  //     return {
-  //       success: true,
-  //       message: 'Test notification sent to Slack successfully',
-  //     };
-  //   } catch (error) {
-  //     throw new HttpException(
-  //       error.message || 'Failed to send test notification',
-  //       HttpStatus.INTERNAL_SERVER_ERROR,
-  //     );
-  //   }
-  // }
+  // 이벤트 기반으로 동작하므로 HTTP 엔드포인트 없음
+  // 향후 필요시 추가 예정
 }
