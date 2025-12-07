@@ -17,6 +17,7 @@ import {
   SummarizeArticleRequestedEvent,
   WEBHOOK_EVENTS,
 } from '../events/webhook.events';
+import { Semaphore } from '../shared/semaphore';
 
 @Injectable()
 export class FetcherService {
@@ -24,6 +25,12 @@ export class FetcherService {
   private readonly githubClient: AxiosInstance;
   private readonly stateFilePath: string;
   private readonly repository: RepositoryConfig;
+
+  /**
+   * Semaphore를 사용한 동시 실행 제어
+   * permits=1: 한 번에 하나의 fetchNewArticles()만 실행 가능
+   */
+  private readonly newArticleFetchSemaphore = new Semaphore(1);
 
   constructor(
     private configService: ConfigService,
@@ -291,21 +298,24 @@ export class FetcherService {
    * 아티클을 수집하고, 이벤트를 발행하며, 상태를 업데이트함
    */
   async fetchNewArticles(): Promise<Article[]> {
+    // Semaphore로 동시 실행 제어
+    // permits가 0이면 대기, 1이면 즉시 실행
+    await this.newArticleFetchSemaphore.acquire();
     this.logger.log('Starting to fetch new articles...');
 
-    // 1. 저장된 상태 불러오기
-    let state = await this.loadState();
-
-    // 첫 실행이면 빈 상태 생성
-    if (!state) {
-      this.logger.log('First run detected. Initializing state...');
-      state = { repositories: {} };
-    }
-
-    const { owner, repo } = this.repository;
-    const repoKey = this.buildRepositoryKey(owner, repo);
-
     try {
+      // 1. 저장된 상태 불러오기
+      let state = await this.loadState();
+
+      // 첫 실행이면 빈 상태 생성
+      if (!state) {
+        this.logger.log('First run detected. Initializing state...');
+        state = { repositories: {} };
+      }
+
+      const { owner, repo } = this.repository;
+      const repoKey = this.buildRepositoryKey(owner, repo);
+
       // 2. Repository에서 아티클 수집
       const { articles, latestSHA } = await this.fetchFromRepository(this.repository, state);
 
@@ -341,8 +351,11 @@ export class FetcherService {
       this.logger.log(`Successfully fetched ${articles.length} new articles`);
       return articles;
     } catch (error) {
-      this.logger.error(`Failed to fetch from ${repoKey}: ${error.message}`);
+      this.logger.error(`Failed to fetch from ${this.buildRepositoryKey(this.repository.owner, this.repository.repo)}: ${error.message}`);
       throw error;
+    } finally {
+      // Semaphore 반환 (성공/실패 모두)
+      this.newArticleFetchSemaphore.release();
     }
   }
 
@@ -373,8 +386,25 @@ export class FetcherService {
       `Received check articles request from: ${event.requestedBy}`,
     );
 
+    // Semaphore를 사용해 중복 요청 체크
+    const isAlreadyFetching = this.newArticleFetchSemaphore.availablePermits() === 0;
+
+    if (isAlreadyFetching) {
+      // 이미 실행 중이면 즉시 대기 메시지 전송
+      this.logger.warn('Article fetching is already in progress. Notifying user to wait.');
+      this.eventEmitter.emit(
+        ARTICLE_EVENTS.CHECK_COMPLETED,
+        new ArticleCheckCompletedEvent(
+          0,
+          '⏳ 이미 아티클을 체크하고 있습니다. 잠시만 기다려주세요!'
+        ),
+      );
+      return;
+    }
+
     try {
       const articles = await this.fetchNewArticles();
+
       const message = articles.length === 0
         ? '✅ 새로운 아티클이 없습니다.'
         : `✅ 총 ${articles.length}개의 새로운 아티클이 있습니다!\n귀여운 고라파덕이 아티클을 요약하고 있습니다...`;
