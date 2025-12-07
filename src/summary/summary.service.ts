@@ -87,7 +87,6 @@ export class SummaryService {
 **주요 내용 (1-2줄):**
 - 이 아티클이 무엇에 관한 것인지 한 문장으로 설명
 - 기술 용어는 영어로 유지
-- iOS 개발자에게 어떤 인사이트를 줄 수 있는 내용인지를 포함 
 
 **요약 (3-5개의 Bullet Point):**
 - 가장 중요한 핵심 포인트만 추출
@@ -98,7 +97,7 @@ export class SummaryService {
 **URL:**
 ${url}
 
-**출력 형식 (이 형식만 출력하세요):**
+**출력 형식 (무조건 이 형식만 따라서 출력하세요):**
 ## 제목
 [아티클 제목 원문 그대로]
 
@@ -158,21 +157,38 @@ What's new in Swift 6.1?
 
     if (!titleMatch || !summaryMatch) {
       throw new SummaryFailedError(
-        url, 
+        url,
         '요약 진행 과정 중 문제가 발생했습니다. 관리자에게 문의해주세요.'
       );
     }
-    
+
+    console.log("response", response);
+
     const title = titleMatch[1].trim();
-    const summary = summaryMatch[1].trim();
+    let summary = summaryMatch[1].trim();
 
     let bullets: string[] = [];
     if (bulletsMatch) {
-      bullets = bulletsMatch[1]
+      const bulletsText = bulletsMatch[1];
+      console.log('Bullets raw text:', JSON.stringify(bulletsText));
+
+      bullets = bulletsText
         .split('\n')
         .map((line) => line.trim())
-        .filter((line) => line.length > 0)
-        .map((line) => line.replace(/^[-*•]\s*/, ''));
+        .map((line) => line.replace(/^[-*•\-−–—]\s*/, ''))
+        .filter((line) => line.length > 0);
+    } else {
+      // ## 요약 섹션이 없으면 주요 내용을 bullet으로 변환
+      this.logger.warn(`No ## 요약 section found, converting summary to bullets`);
+      // 문장을 bullet point로 분리 (한 문장씩 bullet으로)
+      bullets = summary
+        .split(/\.\s+/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+        .map(s => s.endsWith('.') ? s : s + '.');
+
+      // summary는 첫 문장만 유지
+      summary = bullets[0] || summary;
     }
 
     return new ArticleSummary(url, title, summary, bullets);

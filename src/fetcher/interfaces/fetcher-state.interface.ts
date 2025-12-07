@@ -9,7 +9,7 @@ export interface RepositoryState {
   repo: string;
 
   /** 마지막으로 처리한 commit SHA */
-  lastProcessedCommitSha: string;
+  lastProcessedCommitSHA: string;
 
   /** 마지막 체크 시각 */
   lastCheckedAt: Date;

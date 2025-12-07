@@ -6,9 +6,3 @@ export interface RepositoryConfig {
   repo: string;
   branch?: string;
 }
-
-export const REPOSITORY: RepositoryConfig = {
-  owner: 'SAllen0400',
-  repo: 'swift-news',
-  branch: 'main',
-};

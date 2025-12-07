@@ -1,7 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { NotificationController } from './notification.controller';
-// import { FetcherModule } from '../fetcher/fetcher.module';
 
 @Module({
   providers: [NotificationService],
