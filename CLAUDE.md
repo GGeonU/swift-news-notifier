@@ -197,12 +197,11 @@ curl -X POST http://localhost:3000/summary/translate \
 ## 📝 TODO
 
 - [x] 번역/요약 모듈 구현 (`summary`)
-- [ ] GitHub 수집 모듈 구현
-- [ ] Slack/카카오톡 알림 모듈 구현
-- [ ] 스케줄링 (Cron Job) 구현
-- [ ] 중복 처리 방지 로직
-- [ ] 에러 핸들링 및 로깅
-- [ ] 배포 환경 설정
+- [x] GitHub 수집 모듈 구현
+- [x] Slack/카카오톡 알림 모듈 구현
+- [x] 스케줄링 (Cron Job) 구현
+- [x] 중복 처리 방지 로직
+- [x] 에러 핸들링 및 로깅
 
 ---
 

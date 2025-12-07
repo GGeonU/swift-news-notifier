@@ -119,7 +119,7 @@ export class NotificationService {
    */
   private formatSlackMessage(article: ArticleNotification) {
     const formattedSummary = this.convertToSlackMarkdown(article.summary);
-    
+
     const blocks: any[] = [
       {
         type: 'header' as const,
@@ -192,37 +192,37 @@ export class NotificationService {
     );
   }
 
-  /**
-   * 테스트 메시지 전송
-   */
-  async sendTestMessage(): Promise<void> {
-    const testArticle: ArticleNotification = {
-      title: 'Swift 6.0의 새로운 기능 소개',
-      url: 'https://example.com/swift-6-features',
-      translation: `## 번역
+//   /**
+//    * 테스트 메시지 전송
+//    */
+//   async sendTestMessage(): Promise<void> {
+//     const testArticle: ArticleNotification = {
+//       title: 'Swift 6.0의 새로운 기능 소개',
+//       url: 'https://example.com/swift-6-features',
+//       translation: `## 번역
 
-Swift 6.0은 **동시성 안정성**을 크게 개선하고 새로운 기능을 도입했습니다.
+// Swift 6.0은 **동시성 안정성**을 크게 개선하고 새로운 기능을 도입했습니다.
 
-주요 변경사항:
-- *Sendable* 프로토콜 강화
-- \`async/await\` 패턴 개선
-- **Data race 감지** 기능 추가
+// 주요 변경사항:
+// - *Sendable* 프로토콜 강화
+// - \`async/await\` 패턴 개선
+// - **Data race 감지** 기능 추가
 
-코드 예시:
-\`\`\`swift
-actor DataManager {
-    func fetchData() async throws -> Data {
-        // 안전한 동시성 처리
-    }
-}
-\`\`\``,
-      summary: `## 요약
+// 코드 예시:
+// \`\`\`swift
+// actor DataManager {
+//     func fetchData() async throws -> Data {
+//         // 안전한 동시성 처리
+//     }
+// }
+// \`\`\``,
+//       summary: `## 요약
 
-• Swift 6.0의 가장 큰 변화는 **컴파일 타임 데이터 레이스 감지**입니다.
-• \`Sendable\` 프로토콜이 더 엄격해져서 동시성 안전성이 향상되었습니다.
-• 기존 코드에서 마이그레이션이 필요할 수 있으니 [마이그레이션 가이드](https://swift.org/migration)를 참고하세요.`,
-    };
+// • Swift 6.0의 가장 큰 변화는 **컴파일 타임 데이터 레이스 감지**입니다.
+// • \`Sendable\` 프로토콜이 더 엄격해져서 동시성 안전성이 향상되었습니다.
+// • 기존 코드에서 마이그레이션이 필요할 수 있으니 [마이그레이션 가이드](https://swift.org/migration)를 참고하세요.`,
+//     };
 
-    await this.sendToSlack(testArticle);
-  }
+//     await this.sendToSlack(testArticle);
+//   }
 }
