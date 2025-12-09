@@ -32,6 +32,15 @@ export class FetcherService {
    */
   private readonly newArticleFetchSemaphore = new Semaphore(1);
 
+  /**
+   * 전체 워크플로우 진행 상태 추적 (수집 + 요약)
+   * - pending: 대기 중 (아무 작업 없음)
+   * - fetching: 아티클 수집 중
+   * - summarizing: 요약 진행 중 (수집 완료, 요약 대기)
+   */
+  private workflowState: 'pending' | 'fetching' | 'summarizing' = 'pending';
+  private pendingSummaries = 0; // 대기 중인 요약 개수
+
   constructor(
     private configService: ConfigService,
     private eventEmitter: EventEmitter2,
@@ -301,6 +310,7 @@ export class FetcherService {
     // Semaphore로 동시 실행 제어
     // permits가 0이면 대기, 1이면 즉시 실행
     await this.newArticleFetchSemaphore.acquire();
+    this.workflowState = 'fetching'; // 수집 시작
     this.logger.log('Starting to fetch new articles...');
 
     try {
@@ -319,7 +329,14 @@ export class FetcherService {
       // 2. Repository에서 아티클 수집
       const { articles, latestSHA } = await this.fetchFromRepository(this.repository, state);
 
-      // 3. 각 아티클마다 이벤트 발행
+      // 3. 요약 대기 상태로 전환 (아티클이 있는 경우만)
+      if (articles.length > 0) {
+        this.workflowState = 'summarizing';
+        this.pendingSummaries = articles.length;
+        this.logger.log(`Workflow state changed to 'summarizing' with ${articles.length} pending summaries`);
+      }
+
+      // 4. 각 아티클마다 이벤트 발행
       for (const article of articles) {
         this.logger.log(`Emitting article.fetched event for: ${article.title} from ${repoKey}`);
         this.eventEmitter.emit(
@@ -349,9 +366,18 @@ export class FetcherService {
       await this.saveState(state);
 
       this.logger.log(`Successfully fetched ${articles.length} new articles`);
+
+      // 아티클이 없으면 워크플로우 종료
+      if (articles.length === 0) {
+        this.workflowState = 'pending';
+      }
+
       return articles;
     } catch (error) {
       this.logger.error(`Failed to fetch from ${this.buildRepositoryKey(this.repository.owner, this.repository.repo)}: ${error.message}`);
+      // 에러 발생 시 워크플로우 초기화
+      this.workflowState = 'pending';
+      this.pendingSummaries = 0;
       throw error;
     } finally {
       // Semaphore 반환 (성공/실패 모두)
@@ -386,17 +412,19 @@ export class FetcherService {
       `Received check articles request from: ${event.requestedBy}`,
     );
 
-    // Semaphore를 사용해 중복 요청 체크
-    const isAlreadyFetching = this.newArticleFetchSemaphore.availablePermits() === 0;
-
-    if (isAlreadyFetching) {
+    // 전체 워크플로우 진행 중인지 확인 (수집 + 요약)
+    if (this.workflowState !== 'pending') {
       // 이미 실행 중이면 즉시 대기 메시지 전송
-      this.logger.warn('Article fetching is already in progress. Notifying user to wait.');
+      const stateMessage = this.workflowState === 'fetching'
+        ? '아티클을 수집'
+        : `아티클을 요약 (${this.pendingSummaries}개 대기 중)`;
+
+      this.logger.warn(`Workflow is already in progress (${this.workflowState}). Notifying user to wait.`);
       this.eventEmitter.emit(
         ARTICLE_EVENTS.CHECK_COMPLETED,
         new ArticleCheckCompletedEvent(
           0,
-          '⏳ 이미 아티클을 체크하고 있습니다. 잠시만 기다려주세요!'
+          `⏳ 이미 ${stateMessage}하고 있습니다. 잠시만 기다려주세요!`
         ),
       );
       return;
@@ -439,5 +467,43 @@ export class FetcherService {
       ARTICLE_EVENTS.NEW_FETCHED,
       new ArticleFetchedEvent('수동 요청 아티클', event.url),
     );
+  }
+
+  /**
+   * article.summary.completed 이벤트 리스너
+   * 요약이 완료되면 대기 중인 요약 개수를 감소시킴
+   */
+  @OnEvent(ARTICLE_EVENTS.SUMMARY_COMPLETED)
+  handleSummaryCompleted() {
+    if (this.workflowState === 'summarizing') {
+      this.pendingSummaries--;
+      this.logger.log(`Summary completed. Remaining summaries: ${this.pendingSummaries}`);
+
+      // 모든 요약이 완료되면 워크플로우 초기화
+      if (this.pendingSummaries <= 0) {
+        this.logger.log('All summaries completed. Workflow state reset to pending.');
+        this.workflowState = 'pending';
+        this.pendingSummaries = 0;
+      }
+    }
+  }
+
+  /**
+   * article.summary.failed 이벤트 리스너
+   * 요약이 실패해도 대기 중인 요약 개수를 감소시킴
+   */
+  @OnEvent(ARTICLE_EVENTS.SUMMARY_FAILED)
+  handleSummaryFailed() {
+    if (this.workflowState === 'summarizing') {
+      this.pendingSummaries--;
+      this.logger.log(`Summary failed. Remaining summaries: ${this.pendingSummaries}`);
+
+      // 모든 요약이 완료되면 워크플로우 초기화
+      if (this.pendingSummaries <= 0) {
+        this.logger.log('All summaries processed (some failed). Workflow state reset to pending.');
+        this.workflowState = 'pending';
+        this.pendingSummaries = 0;
+      }
+    }
   }
 }
