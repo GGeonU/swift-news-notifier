@@ -80,6 +80,11 @@ export class SummaryService {
     const prompt = `
 당신은 Swift/iOS 기술 아티클 요약 전문가입니다.
 
+**1단계: 주제 확인**
+- 먼저 아래 URL의 아티클이 Swift, iOS, iPadOS, watchOS, tvOS, visionOS, macOS, SwiftUI, UIKit, Combine, Xcode 등 Apple 플랫폼 개발과 관련된 내용인지 확인하세요.
+- Apple 플랫폼 개발과 전혀 관련 없는 주제라면 (예: 안드로이드 개발, 웹 개발, 백엔드, 데이터베이스, AI/ML만 다루는 글 혹은 개발과 관련 없는 페이지 등) "NOT_SWIFT_IOS_TOPIC" 문자열만 반환하세요.
+
+**2단계: 요약 (Apple 개발 관련 주제인 경우만)**
 **임무: 아래 URL의 아티클을 읽고 매우 짧게 요약하세요.**
 **중요: 전체 아티클을 번역하지 마세요! 핵심만 간단히 요약하세요!**
 **예외: 링크의 내용을 가져오지 못하거나 요약을 진행할 수 없는 경우, 페이지에서 내용을 찾을 수 없는 경우 빈 문자열을 반환하세요.**
@@ -151,6 +156,14 @@ What's new in Swift 6.1?
    * 응답 텍스트를 ArticleSummary 객체로 파싱
    */
   private parseSummary(url: string, response: string): ArticleSummary {
+    // 주제 검증 실패 체크
+    if (response.trim() === 'NOT_SWIFT_IOS_TOPIC') {
+      throw new SummaryFailedError(
+        url,
+        '이 아티클은 Swift/iOS 관련 주제가 아닌 것 같습니다. Swift, iOS, Apple 플랫폼 개발 관련 아티클을 요청해주세요!'
+      );
+    }
+
     const titleMatch = response.match(/## 제목\s+([\s\S]*?)(?=\n## |$)/);
     const summaryMatch = response.match(/## 주요 내용\s+([\s\S]*?)(?=\n## |$)/);
     const bulletsMatch = response.match(/## 요약\s+([\s\S]*?)$/);
