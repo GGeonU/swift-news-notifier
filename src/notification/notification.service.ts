@@ -86,14 +86,7 @@ export class NotificationService {
       `Received article.check.completed event: ${event.articleCount} articles found`,
     );
 
-    const article = new ArticleSummary(
-      'https://github.com/SAllen0400/swift-news',
-      '알림 체크 완료',
-      event.message,
-      [],
-    );
-
-    const blocks = this.buildArticleSummaryBlocks(article);
+    const blocks = this.buildSimpleMessageBlocks(event.message);
     try {
       await this.sendSlackMessage(blocks);
       this.logger.log('Successfully sent check completed notification');
@@ -202,6 +195,24 @@ export class NotificationService {
     blocks.push({
       type: 'divider',
     });
+
+    return blocks;
+  }
+
+  /**
+   * Slack 간단한 텍스트 메시지 포맷팅
+   */
+  private buildSimpleMessageBlocks(message: string): (Block | KnownBlock)[] {
+    const blocks: (Block | KnownBlock)[] = [
+      {
+        type: 'section',
+        text: {
+          type: 'plain_text',
+          text: message,
+          emoji: true,
+        },
+      },
+    ];
 
     return blocks;
   }
