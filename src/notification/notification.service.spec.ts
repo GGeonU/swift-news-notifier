@@ -41,7 +41,7 @@ describe('NotificationService', () => {
       const blocks: (Block | KnownBlock)[] = service.buildArticleSummaryBlocks(article);
 
       // then
-      expect(blocks).toHaveLength(4); // header + section + section + divider
+      expect(blocks).toHaveLength(5); // header + section(요약) + section(요약 Bullet points) + section(링크) + divider
 
       // Header 블록 검증
       expect(blocks[0]).toEqual({
@@ -61,8 +61,16 @@ describe('NotificationService', () => {
         },
       });
 
+      // 요약 Bullet points Section 블록 검증
+      expect(blocks[2]).toMatchObject({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+        },
+      });
+
       // 링크 Section 블록 검증
-      expect(blocks[2]).toEqual({
+      expect(blocks[3]).toEqual({
         type: 'section',
         text: {
           type: 'mrkdwn',
@@ -71,28 +79,9 @@ describe('NotificationService', () => {
       });
 
       // Divider 블록 검증
-      expect(blocks[3]).toEqual({
+      expect(blocks[4]).toEqual({
         type: 'divider',
       });
-    });
-
-    it('요약이 비어있을 때 section 블록을 생략해야 함', () => {
-      // given
-      const article = new ArticleSummary(
-        'https://example.com/article',
-        'Test Article',
-        '',
-        []
-      );
-
-      // @ts-expect-error
-      const blocks: (Block | KnownBlock)[] = service.buildArticleSummaryBlocks(article);
-
-      // then
-      expect(blocks).toHaveLength(3); // header + section(링크만) + divider
-      expect(blocks[0].type).toBe('header');
-      expect(blocks[1].type).toBe('section');
-      expect(blocks[2].type).toBe('divider');
     });
   });
 

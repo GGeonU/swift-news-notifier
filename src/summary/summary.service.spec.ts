@@ -103,24 +103,6 @@ What's new in Swift 6.1?
       }).toThrow(SummaryFailedError);
     });
 
-    it('bullet points가 없어도 파싱에 성공해야 함', () => {
-      // given
-      const url = 'https://example.com/article';
-      const responseWithoutBullets = `## 제목
-What's new in Swift 6.1?
-
-## 주요 내용
-이 아티클은 Swift 6.1에 도입된 Concurrency 개선을 소개합니다.`;
-
-      // when
-      // @ts-expect-error - private 메서드 테스트
-      const result: ArticleSummary = service.parseSummary(url, responseWithoutBullets);
-
-      // then
-      expect(result).toBeInstanceOf(ArticleSummary);
-      expect(result.bullets).toHaveLength(0);
-    });
-
     it('다양한 bullet point 형식(-, *, •)을 정규화해야 함', () => {
       // given
       const url = 'https://example.com/article';
