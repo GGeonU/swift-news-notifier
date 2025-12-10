@@ -228,10 +228,17 @@ What's new in Swift 6.1?
 
 ### Slack Slack Command에 올바른 파라미터가 들어오지 않은 경우
 * 특정 URL 요약을 요청하는 커맨드에 파라미터를 입력하지 않은 경우
+
 ![화면 기록 2025-12-10 17 25 32](https://github.com/user-attachments/assets/ac758f8b-88c0-4c04-a445-5a6e8b593fc9)
 
 * 특정 URL 요약을 요청하는 커맨드에 Valid하지 않은 URL을 입력한 경우
+
 ![화면 기록 2025-12-10 17 23 58](https://github.com/user-attachments/assets/24edddbd-d41c-40d4-9f81-0e3b6b585cc5)
+
+
+* 모종의 이유로 Gemini가 URL 내 내용을 제대로 읽을 수 없는 경우
+
+<img width="653" height="463" alt="image" src="https://github.com/user-attachments/assets/f79c9b26-5105-4a96-aa8e-ed9b1cb4acae" />
 
 ## 🚀 실행 방법
 
