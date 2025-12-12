@@ -245,7 +245,7 @@ What's new in Swift 6.1?
 - UnsafeRawBufferPointer의 일부 initializer가 Deprecate 되고, _Concurrency.AsyncStream이 Sendable이 되는 등 전반적인 타입 안전성과 개발 편의성이 강화되었습니다.
 ```
 
-### 4. 🚀 예외 케이스 및 에러 핸들링 대응
+### 4. 예외 케이스 및 에러 핸들링 대응
 ### 전체 요약 중 새로운 아티클 확인 요청이 들어온 경우
 * Repository에 새로운 아티클이 올라와서, 업데이트된 아티클 전체를 요약 중인데 새로운 확인 요청이 Webhook을 통해 들어온 경우
 * Queue 등을 고려했으나, 당장은 구현이 간단한 Flag를 통해서 중복 요청이 핸들링 될 수 있도록 변경
@@ -329,7 +329,7 @@ pnpm test -- fetcher.service.spec.ts
 현재는 1개 Repository만 모니터링하지만, 여러 Repository를 동시에 추적하도록 확장 가능
 
 ### 2. 사용자 맞춤 키워드 필터링
-관심 키워드(SwiftUI, Combine 등)만 알림받도록 필터링 기능 추가
+관심 키워드(SwiftUI, Combine 등)를 등록해서 알림받도록 하는 필터링 기능 추가
 
 ### 3. 데이터베이스 도입
 파일 기반 상태 저장 → PostgreSQL/MongoDB로 전환하여 검색 및 통계 기능 추가
