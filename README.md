@@ -126,6 +126,7 @@ src/
 * ngrok을 통해 서버를 외부로 열어놓고, Slack Slash Command가 해당 API를 통해 접근할 수 있도록 구현
 * 호출 시 제공된 URL을 파싱해 아티클 내용을 Gemini를 통해 요약
 * 이렇게 요약된 내용을 슬랙 채널을 통해 전송
+* (Slack 연동은 Ngrok으로 로컬서버에 대해 외부 접근을 열어놓는 방식을 사용했습니다)
 
 ![화면 기록 2025-12-10 18 55 15](https://github.com/user-attachments/assets/1e0f01d0-8635-483d-b886-3f4b30512822)
 
